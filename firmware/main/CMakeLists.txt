@@ -1,0 +1,33 @@
+idf_component_register(
+    SRCS
+        "app_main.c"
+        "store.c"
+        "display.c"
+        "sdlog.c"
+        "net_link.c"
+        "c6_ota.c"
+        "scan_wifi.c"
+        "scan_ble.c"
+        "scan_matter.c"
+        "scan_zigbee.c"
+        "ui.c"
+    INCLUDE_DIRS "."
+    REQUIRES
+        esp_driver_spi
+        esp_driver_gpio
+        esp_driver_i2c
+        esp_driver_ledc
+        esp_driver_sdmmc
+        sdmmc
+        fatfs
+        esp_lcd
+        esp_app_format
+        app_update
+        esp_timer
+        esp_event
+        esp_netif
+        esp_wifi
+        nvs_flash
+        mdns
+        bt
+)

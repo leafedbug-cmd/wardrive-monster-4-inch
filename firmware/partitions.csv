@@ -1,0 +1,15 @@
+# ESP32-P4-WIFI6-DEV-KIT, 16 MB NOR flash.
+#
+# `c6fw` carries a copy of the ESP32-C6 slave image. `idf.py flash` writes it
+# there automatically (see CMakeLists.txt), and the P4 streams it to the C6
+# over SDIO on the next boot if it differs from the last one pushed. That is
+# what lets the C6 be reflashed with no SD card and no soldering -- its UART
+# is on unrouted pads. An image on the SD card takes precedence if present.
+# See docs/C6-OTA.md.
+#
+# Name,     Type, SubType,  Offset,   Size
+nvs,        data, nvs,      0x9000,   0x6000
+phy_init,   data, phy,      0xf000,   0x1000
+factory,    app,  factory,  0x10000,  0x800000
+storage,    data, fat,      ,         0x100000
+c6fw,       data, 0x40,     ,         0x200000

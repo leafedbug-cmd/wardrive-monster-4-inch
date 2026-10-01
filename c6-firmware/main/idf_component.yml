@@ -1,0 +1,11 @@
+## Same `path:` reference as the P4 project -- the host and the co-processor
+## MUST be built from the identical esp_hosted source, or the RPC wire format
+## between them can disagree. See docs/C6-OTA.md#the-path-length-problem for
+## why this is a path reference rather than a registry version.
+
+dependencies:
+  idf:
+    version: ">=5.5"
+
+  espressif/esp_hosted:
+    path: "C:/Users/atruett/esp/components/esp_hosted"

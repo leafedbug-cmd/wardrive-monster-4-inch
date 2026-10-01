@@ -1,0 +1,39 @@
+## Component dependencies for the wardrive dashboard.
+##
+## esp_hosted turns the on-board ESP32-C6 into the radio for the P4: it brings
+## esp_wifi_remote (so esp_wifi_* calls work as if local) and tunnels BLE HCI
+## so NimBLE runs on the P4 against the C6's controller.
+
+dependencies:
+  idf:
+    version: ">=5.3"
+
+  # Radio co-processor link + the Wi-Fi shim it implies.
+  #
+  # esp_hosted 3.x is referenced BY PATH, not downloaded. A `path:` dependency
+  # is used in place, so the component manager never copies its deep internal
+  # tree into managed_components/ -- which is what breaks on Windows without
+  # long paths enabled (one of its files is ~150 chars on its own, and this
+  # repo already sits 112 chars deep). Extracted copy lives next to ESP-IDF.
+  #
+  # 3.x is what gives us the chunked OTA API (begin/write/end/activate) and
+  # therefore SD-card flashing of the C6. 2.x only has the URL flavour.
+  # See docs/C6-OTA.md.
+  #
+  # To fall back to the registry version, replace the two lines below with:
+  #   espressif/esp_hosted: "~2.0.11"
+  espressif/esp_hosted:
+    path: "C:/Users/atruett/esp/components/esp_hosted"
+
+  espressif/esp_wifi_remote: "*"
+
+  # Display stack: ST7796S panel driver, FT6336U touch (FT5x06 family), LVGL.
+  espressif/esp_lcd_st7796: "^1.2"
+  espressif/esp_lcd_touch_ft5x06: "^1.0"
+  # 2.9.x calls esp_lcd DSI callbacks that IDF 5.5.1 does not have; this
+  # project drives an SPI panel, so an older port layer costs us nothing.
+  espressif/esp_lvgl_port: "~2.6.0"
+  lvgl/lvgl: "^9.2"
+
+  # Matter discovery over Wi-Fi uses DNS-SD.
+  espressif/mdns: "^1.2"
