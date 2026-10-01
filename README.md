@@ -47,7 +47,21 @@ one file per boot, with a session counter kept in NVS so files never collide.
 
 ## Build
 
-Needs ESP-IDF **v5.3+** (developed against 5.5.1).
+Needs ESP-IDF **v5.5.2 or newer** — built and verified against **v5.5.5**.
+
+> Not optional on this board. These kits ship with ESP32-P4 silicon at
+> **revision v3.1**, and IDF up to 5.5.1 caps the P4 at v1.99, so `idf.py flash`
+> refuses outright:
+>
+> ```
+> A fatal error occurred: bootloader/bootloader.bin requires chip revision
+> in range [v0.1 - v1.99] (this chip is revision v3.1)
+> ```
+>
+> v5.5.2 raised the ceiling to v3.99. Don't work around it by editing
+> `ESP32P4_REV_MAX_FULL` in an older IDF: newer versions carry real
+> rev-3-conditional code (`ESP32P4_SELECTS_REV_LESS_V3`), so bumping the number
+> alone can produce a subtly wrong binary.
 
 ```powershell
 cd firmware
