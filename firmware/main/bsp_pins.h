@@ -73,14 +73,23 @@
  * ------------------------------------------------------------------ */
 
 /* The ESP32-P4 has two SDMMC slots and BOTH this card and the C6 radio hang
- * off that one peripheral, so they must be on different slots or whichever
- * initialises second fails with an unhelpful timeout.
+ * off that one peripheral, so they must be on different slots.
  *
- * The card stays on slot 1 (where it works -- slot 0 would not enumerate it,
- * returning ESP_ERR_INVALID_RESPONSE) and esp_hosted is moved to slot 0 via
- * CONFIG_ESP_HOSTED_SDIO_SLOT_0 in sdkconfig.defaults. Change one and you
- * must change the other. */
-#define BSP_SD_SLOT             SDMMC_HOST_SLOT_1
+ * The split is dictated by the silicon, not by preference: slot 0's IOMUX
+ * pins are 43/44/39-42, which is exactly where this board wired its TF card,
+ * and the C6 sits on 18/19/14-17, which belong to slot 1. So:
+ *
+ *      card  -> slot 0   (here)
+ *      C6    -> slot 1   (CONFIG_ESP_HOSTED_SDIO_SLOT_1)
+ *
+ * Getting this backwards makes esp_hosted drive the SD card's pins looking
+ * for a radio, and the C6 never answers. */
+#define BSP_SD_SLOT             SDMMC_HOST_SLOT_0
+
+/* Slot 0's card IO rail is fed from an on-chip LDO on the P4
+ * (SOC_SDMMC_IO_POWER_EXTERNAL). Without configuring it the card never
+ * powers up and mounting fails with ESP_ERR_INVALID_RESPONSE. */
+#define BSP_SD_LDO_CHAN         4
 
 #define BSP_SD_PIN_CLK          GPIO_NUM_43
 #define BSP_SD_PIN_CMD          GPIO_NUM_44

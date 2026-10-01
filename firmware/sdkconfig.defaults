@@ -30,10 +30,10 @@ CONFIG_ESP_HOSTED_SDIO_HOST_INTERFACE=y
 # must sit on different slots -- otherwise whichever initialises second dies
 # with a timeout that looks like dead hardware.
 #
-# The card only enumerates on slot 1, so the radio is moved to slot 0 here.
-# This pairs with BSP_SD_SLOT in bsp_pins.h; change one and you must change
-# the other.
-CONFIG_ESP_HOSTED_SDIO_SLOT_0=y
+# The split is fixed by the pinout: the C6 is on GPIO18/19/14-17 (slot 1),
+# the TF card on GPIO43/44/39-42 (slot 0's IOMUX pins). Pairs with
+# BSP_SD_SLOT in bsp_pins.h -- change one and you must change the other.
+CONFIG_ESP_HOSTED_SDIO_SLOT_1=y
 
 # Do NOT let a missing or unresponsive C6 reboot the whole board. The default
 # is to restart on transport failure, which turns "the radio didn't answer"
@@ -48,6 +48,19 @@ CONFIG_ESP_HOSTED_HOST_CP_BRINGUP_TIMEOUT_MS=5000
 CONFIG_BT_ENABLED=y
 CONFIG_BT_NIMBLE_ENABLED=y
 CONFIG_BT_CONTROLLER_DISABLED=y
+
+# Route HCI through esp_hosted's byte-pipe over SDIO. The controller lives on
+# the C6, so NimBLE's default H4-over-UART transport is wrong -- it asserts in
+# hci_h4_frame_start and boot-loops. It also wants GPIO19 for RTS, which is
+# the C6's SDIO CMD line.
+CONFIG_ESP_HOSTED_HOST_FEAT_BT=y
+
+# Hosted-HCI and UART-HCI are mutually exclusive: both provide
+# ble_transport_to_ll_*_impl / ble_transport_ll_init, so leaving the UART one
+# enabled fails at link time with "multiple definition". BT_CONTROLLER_DISABLED
+# turns it on by default (no local controller => assume an external one on a
+# UART), so it has to be switched off explicitly.
+CONFIG_BT_NIMBLE_TRANSPORT_UART=n
 CONFIG_BT_NIMBLE_STATIC_TO_DYNAMIC=n
 CONFIG_BT_NIMBLE_ROLE_CENTRAL=y
 CONFIG_BT_NIMBLE_ROLE_OBSERVER=y

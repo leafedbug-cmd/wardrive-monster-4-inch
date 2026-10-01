@@ -11,6 +11,7 @@
 #include "sdlog.h"
 #include "store.h"
 
+#include "esp_hosted_bt_host_stack.h"
 #include "host/ble_hs.h"
 #include "host/util/util.h"
 #include "nimble/nimble_port.h"
@@ -226,7 +227,23 @@ static void host_task(void *param)
 
 esp_err_t scan_ble_start(void)
 {
-    esp_err_t err = nimble_port_init();
+    /* Bind NimBLE to the HCI byte-pipe esp_hosted tunnels over SDIO, and
+     * bring the C6's controller up, BEFORE nimble_port_init().
+     *
+     * Skipping this does not fail cleanly: NimBLE falls back to its default
+     * H4-over-UART transport, goes looking for a controller on a UART that
+     * has none, and aborts in hci_h4_frame_start -- which boot-loops the
+     * board. (It also claims GPIO19 for RTS, which is the C6's SDIO CMD.) */
+    esp_hosted_bt_host_stack_cfg_t bt = ESP_HOSTED_BT_HOST_STACK_CONFIG_DEFAULT();
+    esp_err_t err = esp_hosted_bt_host_stack_setup(&bt);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "hosted BT binding failed: %s", esp_err_to_name(err));
+        s_st.state = SCAN_UNAVAILABLE;
+        strlcpy(s_st.detail, "no BT controller", sizeof(s_st.detail));
+        return err;
+    }
+
+    err = nimble_port_init();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "nimble_port_init: %s", esp_err_to_name(err));
         s_st.state = SCAN_UNAVAILABLE;

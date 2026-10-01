@@ -1,5 +1,11 @@
 cmake_minimum_required(VERSION 3.16)
 
+# NOTE: esp_hosted_bt_host_stack (which binds NimBLE to the HCI pipe tunnelled
+# over SDIO) needs no wiring here. Despite living under esp_hosted's
+# examples/common_components, it is not a standalone IDF component: esp_hosted's
+# own CMakeLists add_subdirectory's it and attaches it to the eh_host umbrella,
+# gated on CONFIG_ESP_HOSTED_HOST_FEAT_BT. Setting that Kconfig is all it takes.
+
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(wardrive_monster)
 

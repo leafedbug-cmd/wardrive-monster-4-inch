@@ -113,11 +113,15 @@ static esp_err_t panel_init(void)
     ESP_ERROR_CHECK(esp_lcd_panel_reset(s_panel));
     ESP_ERROR_CHECK(esp_lcd_panel_init(s_panel));
 
-    /* Native panel is 320x480 portrait; the dashboard runs landscape.
-     * Swapping XY gives 480x320. Mirror to get the 12 o'clock viewing
-     * direction upright -- flip mirror_x if yours reads upside down. */
-    ESP_ERROR_CHECK(esp_lcd_panel_swap_xy(s_panel, true));
-    ESP_ERROR_CHECK(esp_lcd_panel_mirror(s_panel, true, false));
+    /* Orientation is deliberately NOT set here.
+     *
+     * esp_lvgl_port re-applies swap_xy/mirror from its own rotation config
+     * when the display is registered (esp_lvgl_port_disp.c), so anything we
+     * set at this level is silently overwritten. Setting it in both places
+     * is how you end up with a portrait-addressed panel being fed landscape
+     * rows: mirrored text and a 160 px strip of never-written panel RAM.
+     *
+     * The single source of truth is lvgl_init() below. */
     ESP_ERROR_CHECK(esp_lcd_panel_invert_color(s_panel, true));
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(s_panel, true));
 
@@ -209,10 +213,22 @@ static esp_err_t lvgl_init(void)
         .vres          = BSP_LCD_V_RES,
         .monochrome    = false,
         .color_format  = LV_COLOR_FORMAT_RGB565,
+        /* Native panel is 320x480 portrait; the dashboard runs landscape.
+         *
+         * swap_xy transposes it to 480x320. A transpose is a reflection, so
+         * it normally takes an ODD number of mirrors to turn back into a
+         * true rotation -- but THIS module's native scan direction is itself
+         * reversed (text reads mirrored with no transforms applied at all),
+         * which adds one more reflection. Hence both mirrors here: the
+         * panel's built-in one plus these two is an even number, and the
+         * image comes out the right way round.
+         *
+         * If it reads upside down, set BOTH to false rather than one of
+         * each -- one of each puts the mirroring back. */
         .rotation = {
-            .swap_xy  = false,   /* already handled in the panel driver */
-            .mirror_x = false,
-            .mirror_y = false,
+            .swap_xy  = true,
+            .mirror_x = true,
+            .mirror_y = true,
         },
         .flags = {
             .buff_dma    = true,

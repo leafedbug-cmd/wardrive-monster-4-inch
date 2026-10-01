@@ -16,6 +16,7 @@
 #include "freertos/task.h"
 #include "nvs.h"
 #include "nvs_flash.h"
+#include "sd_pwr_ctrl_by_on_chip_ldo.h"
 #include "sdmmc_cmd.h"
 
 static const char *TAG = "sdlog";
@@ -104,6 +105,20 @@ static esp_err_t mount_card(void)
      *
      * The card goes on slot 0. Do not change this without moving the C6. */
     host.slot = BSP_SD_SLOT;
+
+    /* On the P4 the card's IO rail comes from an on-chip LDO rather than a
+     * fixed supply, so it has to be switched on explicitly. Skip this and the
+     * card simply never responds -- mounting fails with
+     * ESP_ERR_INVALID_RESPONSE, which looks exactly like a missing card. */
+    sd_pwr_ctrl_ldo_config_t ldo_cfg = { .ldo_chan_id = BSP_SD_LDO_CHAN };
+    sd_pwr_ctrl_handle_t pwr = NULL;
+    esp_err_t perr = sd_pwr_ctrl_new_on_chip_ldo(&ldo_cfg, &pwr);
+    if (perr != ESP_OK) {
+        ESP_LOGW(TAG, "card LDO (chan %d) setup failed: %s",
+                 BSP_SD_LDO_CHAN, esp_err_to_name(perr));
+    } else {
+        host.pwr_ctrl_handle = pwr;
+    }
 
     sdmmc_slot_config_t slot = SDMMC_SLOT_CONFIG_DEFAULT();
     slot.width = BSP_SD_BUS_WIDTH;
