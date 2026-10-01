@@ -72,6 +72,16 @@
  *  the LCD SPI bus. See docs/WIRING.md.                               *
  * ------------------------------------------------------------------ */
 
+/* The ESP32-P4 has two SDMMC slots and BOTH this card and the C6 radio hang
+ * off that one peripheral, so they must be on different slots or whichever
+ * initialises second fails with an unhelpful timeout.
+ *
+ * The card stays on slot 1 (where it works -- slot 0 would not enumerate it,
+ * returning ESP_ERR_INVALID_RESPONSE) and esp_hosted is moved to slot 0 via
+ * CONFIG_ESP_HOSTED_SDIO_SLOT_0 in sdkconfig.defaults. Change one and you
+ * must change the other. */
+#define BSP_SD_SLOT             SDMMC_HOST_SLOT_1
+
 #define BSP_SD_PIN_CLK          GPIO_NUM_43
 #define BSP_SD_PIN_CMD          GPIO_NUM_44
 #define BSP_SD_PIN_D0           GPIO_NUM_39

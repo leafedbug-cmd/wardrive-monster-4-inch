@@ -95,6 +95,16 @@ static esp_err_t mount_card(void)
     sdmmc_host_t host = SDMMC_HOST_DEFAULT();
     host.max_freq_khz = BSP_SD_MAX_FREQ_KHZ;
 
+    /* CRITICAL: the ESP32-P4 has two SDMMC slots and BOTH this card and the
+     * ESP32-C6 radio hang off that peripheral. esp_hosted is hard-wired to
+     * slot 1 (CONFIG_ESP_HOSTED_SDIO_SLOT_1), and SDMMC_HOST_DEFAULT() also
+     * returns slot 1 -- so leaving this at the default makes the card and the
+     * radio fight over one slot. Whichever initialises first wins and the
+     * other fails with a confusing timeout.
+     *
+     * The card goes on slot 0. Do not change this without moving the C6. */
+    host.slot = BSP_SD_SLOT;
+
     sdmmc_slot_config_t slot = SDMMC_SLOT_CONFIG_DEFAULT();
     slot.width = BSP_SD_BUS_WIDTH;
     slot.clk   = BSP_SD_PIN_CLK;

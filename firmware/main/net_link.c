@@ -64,11 +64,29 @@ esp_err_t net_link_start(void)
      * A netif is still required for mDNS on the Matter screen. */
     esp_netif_create_default_wifi_sta();
 
+    /* Deliberately NOT ESP_ERROR_CHECK. esp_hosted_init() can return success
+     * while the SDIO bus to the C6 never actually came up -- the failure then
+     * surfaces here. Panicking would boot-loop the whole board over a missing
+     * radio, taking the display and the SD logger down with it. Degrade
+     * instead: app_main checks the return and simply does not start the
+     * scanners, and the UI shows "C6 DOWN". */
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-    ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_start());
+    esp_err_t err = esp_wifi_init(&cfg);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_wifi_init failed: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "The C6 did not answer on SDIO. Its firmware is most "
+                      "likely missing or incompatible -- see docs/C6-OTA.md "
+                      "(Route C, wired recovery).");
+        s_st.hosted_up = false;
+        return err;
+    }
+
+    if ((err = esp_wifi_set_storage(WIFI_STORAGE_RAM)) != ESP_OK ||
+        (err = esp_wifi_set_mode(WIFI_MODE_STA))       != ESP_OK ||
+        (err = esp_wifi_start())                       != ESP_OK) {
+        ESP_LOGE(TAG, "Wi-Fi bring-up failed: %s", esp_err_to_name(err));
+        return err;
+    }
 
     /* Keep the radio awake -- power save would gap the scan. */
     esp_wifi_set_ps(WIFI_PS_NONE);

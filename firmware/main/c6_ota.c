@@ -68,13 +68,18 @@ typedef struct img_src {
     void       *ctx;
     esp_err_t (*read)(struct img_src *s, uint32_t off, void *dst, size_t len);
     void      (*close)(struct img_src *s);
-    uint32_t    size;        /* real image size, from the header walk */
+    uint32_t    base;        /* bytes to skip before the ESP image starts */
+    uint32_t    size;        /* real image size, from the header walk     */
 } img_src_t;
+
+/* Container written by tools/wrap_c6.py -- see that script for why. */
+#define C6FW_MAGIC      "C6FW"
+#define C6FW_HDR_LEN    16
 
 static esp_err_t file_read(img_src_t *s, uint32_t off, void *dst, size_t len)
 {
     FILE *f = (FILE *)s->ctx;
-    if (fseek(f, off, SEEK_SET) != 0) {
+    if (fseek(f, s->base + off, SEEK_SET) != 0) {
         return ESP_FAIL;
     }
     return (fread(dst, 1, len, f) == len) ? ESP_OK : ESP_FAIL;
@@ -90,7 +95,8 @@ static void file_close(img_src_t *s)
 
 static esp_err_t part_read(img_src_t *s, uint32_t off, void *dst, size_t len)
 {
-    return esp_partition_read((const esp_partition_t *)s->ctx, off, dst, len);
+    return esp_partition_read((const esp_partition_t *)s->ctx,
+                              s->base + off, dst, len);
 }
 
 static void part_close(img_src_t *s)
@@ -104,8 +110,18 @@ static esp_err_t open_file_src(const char *path, img_src_t *out)
     if (!f) {
         return ESP_ERR_NOT_FOUND;
     }
+    /* Exact length straight from the filesystem -- no need to re-derive it. */
+    long sz = 0;
+    if (fseek(f, 0, SEEK_END) == 0) {
+        sz = ftell(f);
+    }
+    if (sz <= 0) {
+        fclose(f);
+        return ESP_ERR_INVALID_SIZE;
+    }
     *out = (img_src_t){ .label = path, .ctx = f,
-                        .read = file_read, .close = file_close };
+                        .read = file_read, .close = file_close,
+                        .size = (uint32_t)sz };
     return ESP_OK;
 }
 
@@ -116,8 +132,33 @@ static esp_err_t open_part_src(img_src_t *out)
     if (!p) {
         return ESP_ERR_NOT_FOUND;
     }
+
+    /* The partition holds a wrapped image, not a bare one. Check the
+     * container magic -- an erased partition reads as 0xFF and must not be
+     * mistaken for firmware. */
+    uint8_t hdr[C6FW_HDR_LEN];
+    if (esp_partition_read(p, 0, hdr, sizeof(hdr)) != ESP_OK) {
+        return ESP_FAIL;
+    }
+    if (memcmp(hdr, C6FW_MAGIC, 4) != 0) {
+        ESP_LOGD(TAG, "c6fw partition is empty or unrecognised");
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    /* Bytes 8..11 are the exact payload length recorded by wrap_c6.py. A
+     * partition has no "file size", and deriving the length from the image
+     * header is easy to get subtly wrong, so use the number we were given. */
+    uint32_t payload_len;
+    memcpy(&payload_len, hdr + 8, sizeof(payload_len));
+    if (payload_len == 0 || payload_len > p->size - C6FW_HDR_LEN) {
+        ESP_LOGW(TAG, "c6fw container length %lu is implausible",
+                 (unsigned long)payload_len);
+        return ESP_ERR_INVALID_SIZE;
+    }
+
     *out = (img_src_t){ .label = "c6fw partition", .ctx = (void *)p,
-                        .read = part_read, .close = part_close };
+                        .read = part_read, .close = part_close,
+                        .base = C6FW_HDR_LEN, .size = payload_len };
     return ESP_OK;
 }
 
@@ -170,13 +211,29 @@ static esp_err_t img_probe(img_src_t *src, char *ver, size_t ver_len)
         off   += sizeof(seg) + seg.data_len;
     }
 
-    total += (16 - (total % 16)) % 16;   /* 16-byte alignment padding */
-    total += 1;                          /* checksum byte             */
+    /* The image is padded so that the checksum byte CLOSES a 16-byte block --
+     * i.e. pad until (total % 16) == 15, then the single checksum byte makes
+     * it 16-aligned. Padding to 16 first and then adding the byte truncates
+     * the image by 15 bytes, which silently eats the end of the appended
+     * SHA-256 and makes the co-processor reject the OTA with
+     * ESP_ERR_OTA_VALIDATE_FAILED. */
+    total += (15 - (total % 16)) % 16;   /* pad to one short of a block */
+    total += 1;                          /* checksum byte closes it     */
     if (hdr.hash_appended == 1) {
-        total += 32;                     /* appended SHA-256          */
+        total += 32;                     /* appended SHA-256            */
     }
 
-    src->size = total;
+    if (src->size && src->size != total) {
+        /* The container/file already told us the exact length. Trust that,
+         * but shout if our own walk disagrees -- it means this parser has
+         * drifted from the image format again. */
+        ESP_LOGW(TAG, "image length mismatch: source says %lu, header walk "
+                      "says %lu -- using %lu",
+                 (unsigned long)src->size, (unsigned long)total,
+                 (unsigned long)src->size);
+    } else if (!src->size) {
+        src->size = total;
+    }
     return ESP_OK;
 }
 

@@ -11,13 +11,33 @@ project(wardrive_monster)
 # Embedding it here means `idf.py flash` delivers BOTH chips' firmware over
 # one USB cable, with no SD card and nothing to wire up.
 #
-# Build it first:   cd ../c6-firmware && idf.py set-target esp32c6 && idf.py build
+# The image is wrapped by tools/wrap_c6.py first: esptool checks every file it
+# writes and rejects a C6 image aimed at a P4, even though this one is only
+# ever stored as data. See that script for the container layout.
+#
+# Build the C6 image first:
+#   cd ../c6-firmware && idf.py set-target esp32c6 && idf.py build
+# Then re-run cmake here (the wrap happens at configure time):
+#   idf.py fullclean && idf.py build
 # ---------------------------------------------------------------------------
-set(C6_IMAGE "${CMAKE_CURRENT_LIST_DIR}/../c6-firmware/build/wardrive_c6_slave.bin")
+set(C6_IMAGE   "${CMAKE_CURRENT_LIST_DIR}/../c6-firmware/build/wardrive_c6_slave.bin")
+set(C6_WRAPPED "${CMAKE_BINARY_DIR}/c6fw.img")
 
 if(EXISTS "${C6_IMAGE}")
-    esptool_py_flash_to_partition(flash "c6fw" "${C6_IMAGE}")
-    message(STATUS "C6 slave image found -- will be flashed into the c6fw partition")
+    execute_process(
+        COMMAND "${PYTHON}" "${CMAKE_CURRENT_LIST_DIR}/tools/wrap_c6.py"
+                "${C6_IMAGE}" "${C6_WRAPPED}"
+        RESULT_VARIABLE C6_WRAP_RESULT
+        OUTPUT_VARIABLE C6_WRAP_OUTPUT
+        ERROR_VARIABLE  C6_WRAP_OUTPUT)
+
+    if(C6_WRAP_RESULT EQUAL 0)
+        esptool_py_flash_to_partition(flash "c6fw" "${C6_WRAPPED}")
+        message(STATUS "C6 slave image will be flashed into the c6fw partition")
+        message(STATUS "  ${C6_WRAP_OUTPUT}")
+    else()
+        message(WARNING "Could not wrap the C6 image: ${C6_WRAP_OUTPUT}")
+    endif()
 else()
     message(STATUS "No C6 slave image at ${C6_IMAGE}")
     message(STATUS "  c6fw partition will be left empty; the C6 keeps its current firmware.")
