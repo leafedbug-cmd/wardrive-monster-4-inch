@@ -122,7 +122,12 @@ static esp_err_t panel_init(void)
      * rows: mirrored text and a 160 px strip of never-written panel RAM.
      *
      * The single source of truth is lvgl_init() below. */
-    ESP_ERROR_CHECK(esp_lcd_panel_invert_color(s_panel, true));
+    /* OFF. This panel does not need inversion, and turning it on renders
+     * the whole UI as the photographic negative of the palette: the
+     * near-black background comes out white, cyan comes out red-orange,
+     * amber comes out blue. It reads as "light mode with wrong colours"
+     * rather than as an obvious fault, which is why it survived this long. */
+    ESP_ERROR_CHECK(esp_lcd_panel_invert_color(s_panel, false));
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(s_panel, true));
 
     return ESP_OK;
@@ -169,11 +174,15 @@ static esp_err_t touch_init(void)
             .reset     = 0,   /* CTP_RST is active low */
             .interrupt = 0,   /* CTP_INT pulls low on touch */
         },
-        /* Match the panel's swap/mirror so touch lines up with pixels. */
+        /* These MUST match the lvgl_port rotation below, flag for flag.
+         * With swap_xy on, the touch Y axis drives the screen's HORIZONTAL
+         * axis -- so a single mismatched mirror_y does not look like a
+         * calibration error, it makes every sideways swipe go the wrong
+         * way while taps still land correctly. */
         .flags = {
             .swap_xy  = true,
             .mirror_x = true,
-            .mirror_y = false,
+            .mirror_y = true,
         },
     };
 

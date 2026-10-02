@@ -91,10 +91,58 @@ Already committed off-header: GPIO14–19 + 54 (C6 SDIO), GPIO39–44 (TF card).
 
 ---
 
+## External ESP32-C6 (Seeed XIAO ESP32C6) — second radio
+
+A second ESP32-C6 is a second 2.4 GHz front end. The on-board one time-slices Wi-Fi, BLE and
+802.15.4 through a single radio, so every protocol steals airtime from the others — and 802.15.4
+is not reachable there at all ([why](SPEC-ESP32-P4-C6.md#why-zigbee-is-blocked)). The XIAO runs
+`c6ext-firmware/`, scans on its own, and reports decoded sightings over a UART.
+
+It feeds the **Wi-Fi** and **Zigbee** screens. Merging needs no special case: the store dedups on
+`(kind, mac)`, so an AP both radios hear is one row keeping the better RSSI — usually the XIAO's,
+since it has the external antenna. BLE is left to the on-board C6, which already does it well;
+adding a third claimant to the XIAO's single front end would cost more than it gained.
+
+Four wires, nothing shared with the panel, the TF card or the on-board C6. The two signal pins are
+header 37 and 38 — directly opposite each other, so the pair sits side by side.
+
+> **The XIAO's `Dn` silkscreen is Seeed board numbering, not C6 GPIO numbers.** `D6` is C6
+> `GPIO16`, not `GPIO6`. Wire by the table, not by the number printed on the pad.
+
+| XIAO pad | C6 GPIO | Function | → P4 GPIO | Header pin |
+|---|---:|---|---:|---:|
+| `D6` | GPIO16 | `U0TXD` — C6 out | **GPIO27** | **38** |
+| `D7` | GPIO17 | `U0RXD` — C6 in | **GPIO47** | **37** |
+| `GND` | — | ground | GND | 34 or 39 |
+| `VBUS` | — | 5 V in | **5V** | 2 or 4 |
+
+**TX and RX cross over.** `D6` goes to the P4's *receive* pin. Both sides are 3.3 V logic, so no
+level shifter.
+
+**Power into `VBUS`, not `3V3`.** The `3V3` pad is the XIAO regulator's *output*. Driving it from
+the header's 3V3 rail backfeeds that regulator and puts the module's radio current — hundreds of
+mA while transmitting — onto a rail already carrying the touch controller.
+
+### The external antenna is not automatic
+
+If you've fitted the u.FL antenna, the XIAO still has to be told to use it. Per Seeed's wiki, on
+the **C6 side**: `GPIO14` LOW powers the RF switch, `GPIO3` HIGH selects the external connector.
+It boots with the onboard ceramic antenna selected. That's the XIAO's firmware to set, not the
+P4's — but it's the first thing to check when the link looks dead or the range is terrible.
+
+The remaining XIAO pads, for reference: `D0`–`D3` = GPIO0/1/2/21, `D4`/`D5` = GPIO22/23 (I2C),
+`D8`/`D9`/`D10` = GPIO19/20/18 (SCK/MISO/MOSI).
+
+---
+
 ## Spare pins
 
-Unused after this build: GPIO0, 23, 24, 25, 26, 27, 32, 33, 36, 45, 46, 47, 48, 53 —
-plus header 3V3 on pins 1/17.
+Unused after this build: GPIO0, 23, 24, 25, 26, 32, 33, 36, 45, 46, 48, 53 — plus header 3V3 on
+pins 1/17. (GPIO47 and GPIO27 are now the external C6's UART, above.)
+
+Treat **GPIO36** (header 24) with care: it sits in the P4's GPIO34–38 strapping/JTAG block, the
+same run as the GPIO37/38 console UART. Verify against the P4 datasheet before using it for
+anything that holds a level during boot.
 
 A UART GPS module (for real wardriving fixes) fits naturally on GPIO23/GPIO24 with 3V3 and GND.
 The logger already carries latitude/longitude/fix columns; they stay empty until a GPS is present.

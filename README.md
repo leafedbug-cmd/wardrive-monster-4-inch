@@ -21,12 +21,20 @@ Swipe between them, or let it auto-cycle every 12 s.
 | 1 | **Wi-Fi** | passive all-channel sweep via `esp_wifi_remote` | working |
 | 2 | **BLE** | passive NimBLE observer against the C6 controller | working |
 | 3 | **Matter** | mDNS `_matterc._udp` / `_matter._tcp` + BLE UUID `0xFFF6` | working |
-| 4 | **Zigbee** | raw 802.15.4 | **unavailable on stock firmware** |
+| 4 | **Zigbee** | raw 802.15.4 via the external C6 | needs the second radio |
 
-The Zigbee screen says so plainly rather than inventing rows. The C6 has the
-802.15.4 radio, but the ESP-Hosted slave does not expose it and the UART an RCP
-link would need is on unrouted pads. Full reasoning and two upgrade paths are in
-[docs/C6-OTA.md](docs/C6-OTA.md#enabling-zigbee).
+Every screen that can be fed by two radios is. The on-board C6 reaches the P4
+over SDIO; a second **ESP32-C6 (Seeed XIAO)** on the 40-pin header reaches it
+over a UART, with its own antenna. Because `store_upsert()` already dedups on
+`(kind, mac)`, a device both radios hear becomes one row keeping the better
+RSSI -- so the second antenna adds coverage without any merge logic.
+
+Zigbee comes **only** from the external C6. The on-board one has the 802.15.4
+radio, but the ESP-Hosted slave does not expose it, the spinel UART an RCP needs
+is on unrouted pads, and the RCP role is built with Wi-Fi off. With no external
+C6 fitted the Zigbee screen stays empty and says why.
+[Wiring](docs/WIRING.md#external-esp32-c6-seeed-xiao-esp32c6--second-radio) ·
+[reasoning](docs/C6-OTA.md#enabling-zigbee).
 
 ## SD card: use the slot on the P4
 
@@ -47,7 +55,8 @@ one file per boot, with a session counter kept in NVS so files never collide.
 
 ## Build
 
-Needs ESP-IDF **v5.5.2 or newer** — built and verified against **v5.5.5**.
+Needs ESP-IDF **v5.5.2 or newer, but not 6.x** — built and verified against
+**v5.5.5**.
 
 > Not optional on this board. These kits ship with ESP32-P4 silicon at
 > **revision v3.1**, and IDF up to 5.5.1 caps the P4 at v1.99, so `idf.py flash`
@@ -62,6 +71,11 @@ Needs ESP-IDF **v5.5.2 or newer** — built and verified against **v5.5.5**.
 > `ESP32P4_REV_MAX_FULL` in an older IDF: newer versions carry real
 > rev-3-conditional code (`ESP32P4_SELECTS_REV_LESS_V3`), so bumping the number
 > alone can produce a subtly wrong binary.
+>
+> **The other end is IDF 6.x.** `esp_hosted` 3.0.9 is the newest release and it
+> does not compile against 6.1 -- `wifi_ap_record_t` lost the `akm_dpp` member,
+> so `eh_host_wifi.c:427` fails. There is no newer esp_hosted to move to, so
+> 5.5.x is the window until upstream catches up.
 
 ```powershell
 cd firmware
@@ -70,10 +84,35 @@ idf.py build
 idf.py -p COMx flash monitor
 ```
 
-`esp_hosted` 3.0.9 is referenced by `path:` from
-`C:/Users/atruett/esp/components/esp_hosted` rather than downloaded, because its
-internal tree is too deep to copy into this repo under Windows' 260-char limit.
-[Why, and how to re-create it elsewhere](docs/C6-OTA.md#the-path-length-problem).
+**On Windows, set a short component cache path first:**
+
+```powershell
+$env:IDF_COMPONENT_CACHE_PATH = 'C:\cc'
+```
+
+`esp_hosted` 3.0.9 has an internal tree deep enough to blow the 260-char
+`MAX_PATH` while the component manager unpacks it -- in its *cache*, not in this
+repo. A short cache root fixes it and the dependency then resolves from the
+registry like any other. [Detail](docs/C6-OTA.md#the-path-length-problem).
+
+## Flashing the external C6 (XIAO)
+
+Its own project, its own chip, flashed over its own USB-C port:
+
+```powershell
+cd c6ext-firmware
+idf.py set-target esp32c6
+idf.py build
+idf.py -p COMx flash monitor
+```
+
+The console comes out over USB, not the UART: the link to the P4 occupies
+GPIO16/17, which are also the C6's default console pins, so
+`CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y` moves logging to the USB port to keep log
+text out of the binary protocol.
+
+Both projects compile `shared/c6ext_proto.h`. Change that file and reflash
+**both** sides — the P4 logs a loud error if the versions disagree.
 
 ## Flashing the C6
 

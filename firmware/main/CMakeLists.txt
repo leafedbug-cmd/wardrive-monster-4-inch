@@ -5,16 +5,20 @@ idf_component_register(
         "display.c"
         "sdlog.c"
         "net_link.c"
+        "c6ext_link.c"
+        "gps.c"
         "c6_ota.c"
         "scan_wifi.c"
         "scan_ble.c"
         "scan_matter.c"
         "scan_zigbee.c"
+        "chimera_ble.c"
         "ui.c"
-    INCLUDE_DIRS "."
+    INCLUDE_DIRS "." "../../shared"
     REQUIRES
         esp_driver_spi
         esp_driver_gpio
+        esp_driver_uart
         esp_driver_i2c
         esp_driver_ledc
         esp_driver_sdmmc

@@ -21,29 +21,37 @@ extern "C" {
 
 typedef struct {
     bool     mounted;
+    bool     session_active;
+    bool     live_only;        /* session without SD logging */
     uint64_t card_size_mb;
     uint64_t free_mb;
-    uint32_t written;       /* rows committed                      */
-    uint32_t dropped;       /* rows lost to a full queue           */
+    uint32_t written;          /* rows committed in current session */
+    uint32_t dropped;          /* rows lost to a full queue */
     uint32_t bytes;
-    char     path[64];      /* active session file                 */
+    int64_t  session_start_us;
+    char     path[64];         /* active session file */
+    char     error[48];        /* last error message if any */
 } sdlog_status_t;
 
-/* Mounts the card and opens a new session file. Safe to call with no card
- * inserted -- returns an error and the rest of the API becomes a no-op. */
+/* Mounts the card and starts logger queue/task. Does NOT start logging.
+ * Safe to call with no card inserted -- returns an error and permits
+ * live-only operation. */
 esp_err_t sdlog_init(void);
 
-/* Queue one detection. Non-blocking; increments `dropped` if the queue is
- * full. Call this only for genuinely new devices. */
+/* Explicit survey session controls: */
+esp_err_t sdlog_session_start(bool live_only);
+void      sdlog_session_stop(void);
+bool      sdlog_session_is_active(void);
+
+/* Queue one detection. Non-blocking; dropped if no session active or queue full. */
 void sdlog_submit(const detection_t *det);
 
-/* Force the current buffer to the card. Called periodically by the logger
- * task; also worth calling before a deliberate reboot. */
+/* Force the current buffer to the card. */
 void sdlog_flush(void);
 
 void sdlog_status(sdlog_status_t *out);
 
-/* True once a card is mounted and a session file is open. */
+/* True if an SD card is physically mounted. */
 bool sdlog_ready(void);
 
 #ifdef __cplusplus

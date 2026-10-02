@@ -13,6 +13,8 @@
 #include <unistd.h>
 
 #include "bsp_pins.h"
+#include "c6ext_link.h"
+#include "gps.h"
 #include "c6_ota.h"
 #include "display.h"
 #include "esp_log.h"
@@ -24,6 +26,7 @@
 #include "sdlog.h"
 #include "store.h"
 #include "ui.h"
+#include "chimera_ble.h"
 
 static const char *TAG = "wardrive";
 
@@ -186,11 +189,11 @@ void app_main(void)
     if (sdlog_init() == ESP_OK) {
         sdlog_status_t sd;
         sdlog_status(&sd);
-        ESP_LOGI(TAG, "logging to %s (%llu MB card, %llu MB free)",
-                 sd.path, (unsigned long long)sd.card_size_mb,
+        ESP_LOGI(TAG, "SD card ready: %llu MB card, %llu MB free (session logger initialized)",
+                 (unsigned long long)sd.card_size_mb,
                  (unsigned long long)sd.free_mb);
     } else {
-        ESP_LOGW(TAG, "no SD card -- detections will not be logged");
+        ESP_LOGW(TAG, "no SD card mounted -- live survey sessions available");
     }
 
     splash_say("bringing up C6 radio...");
@@ -206,20 +209,27 @@ void app_main(void)
     splash_say("preparing store...");
     ESP_ERROR_CHECK(store_init(STORE_CAPACITY));
 
+    /* The external C6 is its own chip on its own UART, so it is brought up
+     * independently of the SDIO radio link -- it still scans when the
+     * on-board C6 is dead, and it is the only source of 802.15.4. */
+    ESP_ERROR_CHECK_WITHOUT_ABORT(c6ext_link_start());
+
+    /* Also independent of the radio link, and also fine to be absent:
+     * with no module fitted this simply never reports a fix. */
+    ESP_ERROR_CHECK_WITHOUT_ABORT(gps_start());
+    scan_zigbee_start();
+
     if (link == ESP_OK) {
         splash_say("starting scanners...");
         ESP_ERROR_CHECK(scan_wifi_start());
         ESP_ERROR_CHECK(scan_ble_start());
         ESP_ERROR_CHECK(scan_matter_start());
-        /* Returns ESP_ERR_NOT_SUPPORTED by design on this hardware --
-         * the Zigbee screen explains why rather than faking rows. */
-        scan_zigbee_start();
+
+        /* ChimeraBLE toolkit: depends on NimBLE being up. */
+        ESP_ERROR_CHECK_WITHOUT_ABORT(chimera_init());
     }
 
     ESP_ERROR_CHECK(ui_init());
-
-    /* Hands-free by default: rotate screens, but a swipe takes over. */
-    ui_set_autocycle(12);
 
     net_link_status_t ln;
     net_link_status(&ln);
