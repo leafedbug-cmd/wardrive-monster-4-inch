@@ -5,7 +5,10 @@
  *   1  WIFI      count, rate, channel occupancy, strongest APs
  *   2  BLE       count, rate, strongest advertisers
  *   3  MATTER    commissionable vs operational nodes
- *   4  ZIGBEE    why there is no data, and what would change that
+ *   4  ZIGBEE    count, rate, strongest 802.15.4 devices
+ *
+ * Screens 1-4 all merge both radios: the on-board C6 over SDIO, and the
+ * external C6 on the header over UART. Zigbee comes only from the latter.
  *
  * Swipe left/right to move between screens, or let it auto-cycle.
  * Call ui_init() only after display_init() has returned.

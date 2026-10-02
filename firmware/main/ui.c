@@ -405,39 +405,17 @@ static void update_wifi(void)
 
 static void build_zigbee(lv_obj_t *t)
 {
-    lv_obj_t *c = mk_card(t, 6, 4, BSP_LCD_H_RES - 12, BODY_H - 8, COL_ZIGBEE);
-
-    lv_obj_t *hd = mk_label(c, &lv_font_montserrat_20, COL_ZIGBEE,
-                            "ZIGBEE  -  RADIO UNAVAILABLE");
-    lv_obj_align(hd, LV_ALIGN_TOP_LEFT, 0, 0);
-
-    lv_obj_t *body = mk_label(c, &lv_font_montserrat_14, COL_TEXT,
-        "The C6 has an 802.15.4 radio, but this board cannot reach it:\n"
-        "\n"
-        "  1.  The ESP-Hosted slave exposes Wi-Fi, BLE and OpenThread\n"
-        "      to the P4 - not raw 802.15.4, and not Zigbee.\n"
-        "  2.  Zigbee-over-hosted needs a dedicated spinel UART. The\n"
-        "      C6's UART is on unrouted pads, so it needs soldering.\n"
-        "  3.  One 2.4 GHz front end is shared by all three protocols,\n"
-        "      so scanning here would cost Wi-Fi and BLE duty cycle.\n"
-        "\n"
-        "Nothing is fabricated on this screen. See docs/C6-OTA.md for\n"
-        "the two routes to making it live.");
-    lv_obj_align(body, LV_ALIGN_TOP_LEFT, 0, 28);
-
-    s_meta[UI_SCREEN_ZIGBEE] = mk_label(c, &lv_font_montserrat_14, COL_MUTED, "");
-    lv_obj_align(s_meta[UI_SCREEN_ZIGBEE], LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    /* Same layout as the other protocol screens. It used to be a wall of
+     * text explaining why it could never have data; the external C6 on the
+     * header is that data source, so this is a real list now. When none is
+     * fitted the list is empty and the meta block says why -- which is the
+     * same way every other screen reports a dead source. */
+    build_protocol(t, UI_SCREEN_ZIGBEE, false);
 }
 
 static void update_zigbee(void)
 {
-    store_stats_t st;
-    store_stats(DET_ZIGBEE, &st);
-    scanner_status_t sc;
-    scan_zigbee_status(&sc);
-    lv_label_set_text_fmt(s_meta[UI_SCREEN_ZIGBEE],
-                          "scanner: %s   devices: %lu",
-                          sc.detail, (unsigned long)st.unique);
+    update_protocol(UI_SCREEN_ZIGBEE, DET_ZIGBEE, true);
 }
 
 /* ------------------------------------------------------------------ *

@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 #include "bsp_pins.h"
+#include "c6ext_link.h"
 #include "c6_ota.h"
 #include "display.h"
 #include "esp_log.h"
@@ -206,14 +207,17 @@ void app_main(void)
     splash_say("preparing store...");
     ESP_ERROR_CHECK(store_init(STORE_CAPACITY));
 
+    /* The external C6 is its own chip on its own UART, so it is brought up
+     * independently of the SDIO radio link -- it still scans when the
+     * on-board C6 is dead, and it is the only source of 802.15.4. */
+    ESP_ERROR_CHECK_WITHOUT_ABORT(c6ext_link_start());
+    scan_zigbee_start();
+
     if (link == ESP_OK) {
         splash_say("starting scanners...");
         ESP_ERROR_CHECK(scan_wifi_start());
         ESP_ERROR_CHECK(scan_ble_start());
         ESP_ERROR_CHECK(scan_matter_start());
-        /* Returns ESP_ERR_NOT_SUPPORTED by design on this hardware --
-         * the Zigbee screen explains why rather than faking rows. */
-        scan_zigbee_start();
     }
 
     ESP_ERROR_CHECK(ui_init());

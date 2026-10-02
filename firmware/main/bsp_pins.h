@@ -14,6 +14,7 @@
 #pragma once
 
 #include "driver/gpio.h"
+#include "driver/uart.h"
 
 /* ------------------------------------------------------------------ *
  *  Display -- ST7796S over SPI2                                      *
@@ -116,3 +117,39 @@
 
 /* The C6 slave image is read from the SD card and pushed over SDIO. */
 #define BSP_C6_FIRMWARE_PATH    BSP_SD_MOUNT_POINT "/c6_slave.bin"
+
+/* ------------------------------------------------------------------ *
+ *  External ESP32-C6 (Seeed XIAO ESP32C6) -- second radio over UART.  *
+ *                                                                     *
+ *  The on-board C6 cannot do 802.15.4 and Wi-Fi at the same time      *
+ *  (docs/SPEC-ESP32-P4-C6.md section 6), so Zigbee/Thread goes to a   *
+ *  second C6 on its own UART. Nothing here is shared with the panel,  *
+ *  the TF card or the on-board C6.                                    *
+ *                                                                     *
+ *  Wiring -- note the XIAO's Dn silkscreen is Seeed board numbering,  *
+ *  NOT C6 GPIO numbers:                                               *
+ *                                                                     *
+ *      XIAO D6 (C6 GPIO16, U0TXD) -> P4 GPIO27  hdr 38   (P4 RX)      *
+ *      XIAO D7 (C6 GPIO17, U0RXD) -> P4 GPIO47  hdr 37   (P4 TX)      *
+ *      XIAO GND                   -> GND        hdr 34/39             *
+ *      XIAO VBUS                  -> 5V         hdr 2/4               *
+ *                                                                     *
+ *  Power into VBUS, not 3V3: the 3V3 pad is the XIAO regulator's      *
+ *  OUTPUT, and feeding it backfeeds that regulator and dumps the      *
+ *  module's radio current onto the header's 3V3 rail.                 *
+ *                                                                     *
+ *  TX and RX cross over. Both sides are 3.3 V logic; no level shift.  *
+ * ------------------------------------------------------------------ */
+
+#define BSP_C6EXT_UART_PORT     UART_NUM_1
+#define BSP_C6EXT_PIN_RX        GPIO_NUM_27   /* hdr 38 <- XIAO D6 (TX) */
+#define BSP_C6EXT_PIN_TX        GPIO_NUM_47   /* hdr 37 -> XIAO D7 (RX) */
+#define BSP_C6EXT_PIN_RTS       UART_PIN_NO_CHANGE
+#define BSP_C6EXT_PIN_CTS       UART_PIN_NO_CHANGE
+#define BSP_C6EXT_BAUD_RATE     460800
+
+/* The XIAO does NOT switch to its u.FL connector on its own. On the
+ * C6 side, GPIO14 must be LOW to power the RF switch and GPIO3 HIGH
+ * to select the external antenna; it defaults to the onboard ceramic.
+ * That is the XIAO's firmware to set, not the P4's -- listed here so
+ * a dead-seeming link is not misdiagnosed as wiring. */

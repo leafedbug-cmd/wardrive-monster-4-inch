@@ -1,0 +1,47 @@
+# External ESP32-C6 scanner (Seeed XIAO ESP32C6) for the Wardrive Monster.
+#
+# This is a standalone second radio on a UART, NOT an ESP-Hosted slave --
+# the on-board C6 is that one. See main/main.c for the division of labour.
+
+CONFIG_IDF_TARGET="esp32c6"
+
+# ---------------------------------------------------------------- console
+# The data link to the P4 sits on GPIO16/17, which are ALSO UART0's default
+# console pins on the C6. Leaving the console there would interleave log
+# text with the binary protocol and corrupt both. The XIAO has native USB,
+# so the console moves there: plug in USB-C for logs.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_ESP_CONSOLE_UART_DEFAULT=n
+CONFIG_ESP_CONSOLE_NONE=n
+
+# ---------------------------------------------------------------- radios
+# Raw 802.15.4. This is the whole reason the external chip exists: the
+# on-board C6 cannot do it and keep Wi-Fi (docs/SPEC-ESP32-P4-C6.md s6).
+CONFIG_IEEE802154_ENABLED=y
+CONFIG_IEEE802154_RX_BUFFER_SIZE=20
+
+# Wi-Fi: receive-side only. This firmware never associates, so transmit
+# buffers are wasted RAM and deep RX buffers are what matter.
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=16
+CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=48
+CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM=16
+CONFIG_ESP_WIFI_NVS_ENABLED=y
+CONFIG_ESP_WIFI_ENTERPRISE_SUPPORT=n
+
+# Bluetooth off. The on-board C6 already runs a working BLE observer over
+# SDIO; a third claimant on this chip's single front end would cost Wi-Fi
+# and 802.15.4 airtime to duplicate it. See apply_roles() in main.c.
+CONFIG_BT_ENABLED=n
+
+# Wi-Fi and 802.15.4 are time-sliced by hand (one phase owns the radio and
+# the other stack is stopped), so the arbiter is not needed and its RAM and
+# latency cost buys nothing here.
+CONFIG_ESP_COEX_SW_COEXIST_ENABLE=n
+
+# ---------------------------------------------------------------- CPU / OS
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_160=y
+CONFIG_FREERTOS_HZ=1000
+
+# ---------------------------------------------------------------- misc
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
