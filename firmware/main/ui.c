@@ -9,6 +9,7 @@
 #include "display.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "gps.h"
 #include "net_link.h"
 #include "scanners.h"
 #include "sdlog.h"
@@ -28,6 +29,7 @@ static const char *TAG = "ui";
 #define COL_BLE       lv_color_hex(0x60A5FA)
 #define COL_MATTER    lv_color_hex(0xA78BFA)
 #define COL_ZIGBEE    lv_color_hex(0xFBBF24)
+#define COL_GPS       lv_color_hex(0x34D399)
 #define COL_OK        lv_color_hex(0x4ADE80)
 #define COL_WARN      lv_color_hex(0xFB923C)
 #define COL_BAD       lv_color_hex(0xF87171)
@@ -40,7 +42,7 @@ static const char *TAG = "ui";
 #define REFRESH_MS 1000
 
 static const char *SCREEN_NAME[UI_SCREEN_COUNT] = {
-    "COMBINED", "WI-FI", "BLE", "MATTER", "ZIGBEE"
+    "COMBINED", "WI-FI", "BLE", "MATTER", "ZIGBEE", "GPS"
 };
 
 static lv_color_t screen_color(ui_screen_t s)
@@ -50,6 +52,7 @@ static lv_color_t screen_color(ui_screen_t s)
     case UI_SCREEN_BLE:    return COL_BLE;
     case UI_SCREEN_MATTER: return COL_MATTER;
     case UI_SCREEN_ZIGBEE: return COL_ZIGBEE;
+    case UI_SCREEN_GPS:    return COL_GPS;
     default:               return COL_TEXT;
     }
 }
@@ -73,6 +76,10 @@ static lv_obj_t *s_lc_rssi[UI_SCREEN_COUNT];   /* dBm, right-aligned */
 static lv_obj_t *s_lc_ch[UI_SCREEN_COUNT];     /* channel            */
 static lv_obj_t *s_lc_age[UI_SCREEN_COUNT];    /* age                */
 static lv_obj_t *s_chart;
+
+/* GPS screen */
+static lv_obj_t *s_gps_sats, *s_gps_meta, *s_gps_lat, *s_gps_lon,
+                *s_gps_state;
 static lv_chart_series_t *s_chart_ser;
 
 static uint16_t  s_autocycle_s;
@@ -110,6 +117,12 @@ static lv_obj_t *mk_card(lv_obj_t *parent, lv_coord_t x, lv_coord_t y,
     lv_obj_set_style_pad_all(c, 6, 0);
     lv_obj_set_scrollable(c, false);
     lv_obj_set_scrollbar_mode(c, LV_SCROLLBAR_MODE_OFF);
+    /* Cards are decoration. lv_obj_create() makes objects CLICKABLE by
+     * default, and a clickable child swallows the press that starts a
+     * swipe instead of letting it reach the tileview -- so a screen whose
+     * cards happen to cover where your thumb lands simply will not swipe.
+     * Nothing here needs to receive input, so take the flag away. */
+    lv_obj_remove_flag(c, LV_OBJ_FLAG_CLICKABLE);
     return c;
 }
 
@@ -539,6 +552,96 @@ static void update_zigbee(void)
     update_protocol(UI_SCREEN_ZIGBEE, DET_ZIGBEE, true);
 }
 
+
+/* ------------------------------------------------------------------ *
+ *  Screen 5 -- GPS                                                    *
+ * ------------------------------------------------------------------ */
+
+static void build_gps(lv_obj_t *t)
+{
+    /* Satellite count, which is the number that tells you whether a fix is
+     * coming. Position itself goes on the right, big enough to read at a
+     * glance while driving. */
+    lv_obj_t *stat = mk_card(t, COL_L_X, STAT_Y, COL_L_W, STAT_H, COL_GPS);
+    lv_obj_t *cap = mk_label(stat, &lv_font_montserrat_14, COL_MUTED, "SATELLITES");
+    lv_obj_align(cap, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    s_gps_sats = mk_label(stat, &lv_font_montserrat_36, COL_TEXT, "0");
+    lv_obj_align(s_gps_sats, LV_ALIGN_BOTTOM_LEFT, 0, 2);
+
+    lv_obj_t *metac = mk_card(t, COL_L_X, META_Y, COL_L_W, META_H_PLAIN, COL_EDGE);
+    s_gps_meta = mk_label(metac, &lv_font_montserrat_14, COL_MUTED, "");
+    lv_obj_set_width(s_gps_meta, COL_L_W - 14);
+    lv_label_set_long_mode(s_gps_meta, LV_LABEL_LONG_WRAP);
+    lv_obj_align(s_gps_meta, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    lv_obj_t *pos = mk_card(t, COL_R_X, 4, COL_R_W, BODY_H - 8, COL_GPS);
+
+    lv_obj_t *latcap = mk_label(pos, &lv_font_montserrat_14, COL_MUTED, "LATITUDE");
+    lv_obj_align(latcap, LV_ALIGN_TOP_LEFT, 0, 4);
+    s_gps_lat = mk_label(pos, &lv_font_montserrat_28, COL_TEXT, "--");
+    lv_obj_align(s_gps_lat, LV_ALIGN_TOP_LEFT, 0, 24);
+
+    lv_obj_t *loncap = mk_label(pos, &lv_font_montserrat_14, COL_MUTED, "LONGITUDE");
+    lv_obj_align(loncap, LV_ALIGN_TOP_LEFT, 0, 74);
+    s_gps_lon = mk_label(pos, &lv_font_montserrat_28, COL_TEXT, "--");
+    lv_obj_align(s_gps_lon, LV_ALIGN_TOP_LEFT, 0, 94);
+
+    s_gps_state = mk_label(pos, &lv_font_montserrat_16, COL_MUTED, "");
+    lv_obj_set_width(s_gps_state, COL_R_W - 14);
+    lv_label_set_long_mode(s_gps_state, LV_LABEL_LONG_WRAP);
+    lv_obj_align(s_gps_state, LV_ALIGN_TOP_LEFT, 0, 150);
+}
+
+static void update_gps(void)
+{
+    gps_fix_t f;
+    gps_get(&f);
+
+    scanner_status_t sc;
+    gps_status(&sc);
+
+    lv_label_set_text_fmt(s_gps_sats, "%u", (unsigned)f.sats);
+
+    /* Only print coordinates we actually have. A stale or absent fix shows
+     * dashes rather than the last known position dressed up as current. */
+    if (gps_has_fix()) {
+        lv_label_set_text_fmt(s_gps_lat, "%.5f", f.lat);
+        lv_label_set_text_fmt(s_gps_lon, "%.5f", f.lon);
+        lv_obj_set_style_text_color(s_gps_lat, COL_TEXT, 0);
+        lv_obj_set_style_text_color(s_gps_lon, COL_TEXT, 0);
+    } else {
+        lv_label_set_text(s_gps_lat, "--");
+        lv_label_set_text(s_gps_lon, "--");
+        lv_obj_set_style_text_color(s_gps_lat, COL_MUTED, 0);
+        lv_obj_set_style_text_color(s_gps_lon, COL_MUTED, 0);
+    }
+
+    static const char *QUALITY[] = { "no fix", "GPS", "DGPS" };
+    const char *q = (f.quality < 3) ? QUALITY[f.quality] : "fix";
+
+    char meta[160];
+    snprintf(meta, sizeof(meta), "%s\n%.0f m alt\n%.1f kt\n%lu sentences",
+             q, (double)f.alt_m, (double)f.speed_kts,
+             (unsigned long)sc.reports);
+    lv_label_set_text(s_gps_meta, meta);
+
+    if (sc.state == SCAN_UNAVAILABLE) {
+        lv_label_set_text(s_gps_state,
+                          "No NMEA on the GPS pins.\n"
+                          "Check 3V3, GND, and that the module TX reaches RX.");
+        lv_obj_set_style_text_color(s_gps_state, COL_BAD, 0);
+    } else if (!gps_has_fix()) {
+        lv_label_set_text(s_gps_state,
+                          "Receiver talking, waiting for satellites.\n"
+                          "A cold start takes minutes, and needs sky.");
+        lv_obj_set_style_text_color(s_gps_state, COL_WARN, 0);
+    } else {
+        lv_label_set_text(s_gps_state, "Fix good -- positions are being logged.");
+        lv_obj_set_style_text_color(s_gps_state, COL_OK, 0);
+    }
+}
+
 /* ------------------------------------------------------------------ *
  *  Refresh                                                            *
  * ------------------------------------------------------------------ */
@@ -607,6 +710,7 @@ static void refresh_cb(lv_timer_t *timer)
      * recency instead of signal. */
     case UI_SCREEN_MATTER:   update_protocol(UI_SCREEN_MATTER, DET_MATTER, false); break;
     case UI_SCREEN_ZIGBEE:   update_zigbee();   break;
+    case UI_SCREEN_GPS:      update_gps();      break;
     default: break;
     }
 
@@ -657,7 +761,10 @@ esp_err_t ui_init(void)
         lv_dir_t dir = LV_DIR_HOR;
         s_tile[i] = lv_tileview_add_tile(s_tiles, i, 0, dir);
         lv_obj_set_style_pad_all(s_tile[i], 0, 0);
-        lv_obj_set_scrollable(s_tile[i], false);
+        /* Do NOT set the tile non-scrollable: the tileview navigates by
+         * scrolling its tiles, so clearing that flag fights the widget.
+         * Hiding the scrollbar is all that was actually wanted. */
+        lv_obj_set_scrollbar_mode(s_tile[i], LV_SCROLLBAR_MODE_OFF);
     }
 
     build_combined(s_tile[UI_SCREEN_COMBINED]);
@@ -665,6 +772,7 @@ esp_err_t ui_init(void)
     build_protocol(s_tile[UI_SCREEN_BLE],    UI_SCREEN_BLE,    false);
     build_protocol(s_tile[UI_SCREEN_MATTER], UI_SCREEN_MATTER, false);
     build_zigbee(s_tile[UI_SCREEN_ZIGBEE]);
+    build_gps(s_tile[UI_SCREEN_GPS]);
 
     s_active = UI_SCREEN_COMBINED;
     s_last_touch_ms = now_ms();

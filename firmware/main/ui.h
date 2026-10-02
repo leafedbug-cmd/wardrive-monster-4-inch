@@ -6,6 +6,7 @@
  *   2  BLE       count, rate, strongest advertisers
  *   3  MATTER    commissionable vs operational nodes
  *   4  ZIGBEE    count, rate, strongest 802.15.4 devices
+ *   5  GPS       fix state, position, satellites
  *
  * Screens 1-4 all merge both radios: the on-board C6 over SDIO, and the
  * external C6 on the header over UART. Zigbee comes only from the latter.
@@ -30,6 +31,7 @@ typedef enum {
     UI_SCREEN_BLE,
     UI_SCREEN_MATTER,
     UI_SCREEN_ZIGBEE,
+    UI_SCREEN_GPS,
     UI_SCREEN_COUNT
 } ui_screen_t;
 

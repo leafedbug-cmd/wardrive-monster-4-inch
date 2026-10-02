@@ -93,6 +93,10 @@ static void csv_escape(const char *in, char *out, size_t out_len)
     out[o] = '\0';
 }
 
+/* Three tries, a third of a second apart. See the retry loop below. */
+#define SD_MOUNT_ATTEMPTS  3
+#define SD_MOUNT_RETRY_MS  350
+
 static esp_err_t mount_card(void)
 {
     sdmmc_host_t host = SDMMC_HOST_DEFAULT();
@@ -138,10 +142,29 @@ static esp_err_t mount_card(void)
         .allocation_unit_size   = 16 * 1024,
     };
 
-    esp_err_t err = esp_vfs_fat_sdmmc_mount(BSP_SD_MOUNT_POINT, &host, &slot,
-                                            &mcfg, &s_card);
+    /* Retry. A card that has just had its IO rail switched on by the LDO
+     * can need a moment before it answers ACMD41, and the symptom when it
+     * does not is send_op_cond returning ESP_ERR_TIMEOUT -- which is
+     * indistinguishable from no card at all. One attempt turned that race
+     * into "logging is off for this whole drive"; three attempts a third
+     * of a second apart costs nothing on a card that was ready anyway. */
+    esp_err_t err = ESP_FAIL;
+    for (int attempt = 1; attempt <= SD_MOUNT_ATTEMPTS; attempt++) {
+        err = esp_vfs_fat_sdmmc_mount(BSP_SD_MOUNT_POINT, &host, &slot,
+                                      &mcfg, &s_card);
+        if (err == ESP_OK) {
+            break;
+        }
+        ESP_LOGW(TAG, "mount attempt %d/%d failed: %s",
+                 attempt, SD_MOUNT_ATTEMPTS, esp_err_to_name(err));
+        if (attempt < SD_MOUNT_ATTEMPTS) {
+            vTaskDelay(pdMS_TO_TICKS(SD_MOUNT_RETRY_MS));
+        }
+    }
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "mount failed: %s", esp_err_to_name(err));
+        if (pwr) {
+            sd_pwr_ctrl_del_on_chip_ldo(pwr);
+        }
         return err;
     }
 

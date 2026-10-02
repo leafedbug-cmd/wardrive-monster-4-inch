@@ -100,7 +100,12 @@
 #define BSP_SD_PIN_D3           GPIO_NUM_42
 #define BSP_SD_BUS_WIDTH        4
 #define BSP_SD_MOUNT_POINT      "/sdcard"
-#define BSP_SD_MAX_FREQ_KHZ     40000
+/* 20 MHz, not 40. The P4 can clock this slot at 40, but that only holds up
+ * with clean signalling, and this board's TF slot shares the die with the
+ * C6's SDIO on the neighbouring slot. Logging is bursty and tiny -- a few
+ * hundred bytes per detection -- so the halved clock is invisible, while
+ * the margin it buys shows up as the card actually mounting. */
+#define BSP_SD_MAX_FREQ_KHZ     20000
 
 /* ------------------------------------------------------------------ *
  *  ESP32-C6 radio co-processor (ESP-Hosted over SDIO).                *
