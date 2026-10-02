@@ -1084,7 +1084,6 @@ static void build_ble_app(lv_obj_t *cont)
         lv_obj_set_pos(s_ble_tabs[i], 6, 34);
         lv_obj_set_size(s_ble_tabs[i], BSP_LCD_H_RES - 12, BODY_H - 38);
         lv_obj_set_scrollable(s_ble_tabs[i], false);
-        if (i != 0) lv_obj_add_flag(s_ble_tabs[i], LV_OBJ_FLAG_HIDDEN);
     }
 
     /* Tab 0: Devices list */
@@ -1144,6 +1143,10 @@ static void build_ble_app(lv_obj_t *cont)
     s_ble_gatt_info = mk_label(gatt_c, &lv_font_montserrat_14, COL_TEXT, "GATT Inspector: Standby");
     lv_obj_set_width(s_ble_gatt_info, BSP_LCD_H_RES - 36);
     lv_label_set_long_mode(s_ble_gatt_info, LV_LABEL_LONG_WRAP);
+
+    for (int i = 1; i < 4; i++) {
+        lv_obj_add_flag(s_ble_tabs[i], LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 static void update_ble_app(void)
@@ -1268,7 +1271,6 @@ static void build_wifi_app(lv_obj_t *cont)
         lv_obj_set_pos(s_wifi_tabs[i], 6, 34);
         lv_obj_set_size(s_wifi_tabs[i], BSP_LCD_H_RES - 12, BODY_H - 38);
         lv_obj_set_scrollable(s_wifi_tabs[i], false);
-        if (i != 0) lv_obj_add_flag(s_wifi_tabs[i], LV_OBJ_FLAG_HIDDEN);
     }
 
     /* Tab 0: AP List */
@@ -1317,6 +1319,10 @@ static void build_wifi_app(lv_obj_t *cont)
     lv_bar_set_value(s_wifi_mon_bar, -100, LV_ANIM_OFF);
     lv_obj_set_style_bg_color(s_wifi_mon_bar, COL_CARD_SUB, 0);
     lv_obj_set_style_bg_color(s_wifi_mon_bar, COL_WIFI, LV_PART_INDICATOR);
+
+    for (int i = 1; i < 3; i++) {
+        lv_obj_add_flag(s_wifi_tabs[i], LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 static void update_wifi_app(void)
@@ -1419,7 +1425,6 @@ static void build_matter_app(lv_obj_t *cont)
         lv_obj_set_pos(s_matter_tabs[i], 6, 34);
         lv_obj_set_size(s_matter_tabs[i], BSP_LCD_H_RES - 12, BODY_H - 38);
         lv_obj_set_scrollable(s_matter_tabs[i], false);
-        if (i != 0) lv_obj_add_flag(s_matter_tabs[i], LV_OBJ_FLAG_HIDDEN);
     }
 
     /* Tab 0: BLE Commissioning */
@@ -1438,6 +1443,10 @@ static void build_matter_app(lv_obj_t *cont)
     s_matter_detail = mk_label(det_c, &lv_font_montserrat_14, COL_TEXT, "Select a Matter node for details.");
     lv_obj_set_width(s_matter_detail, BSP_LCD_H_RES - 36);
     lv_label_set_long_mode(s_matter_detail, LV_LABEL_LONG_WRAP);
+
+    for (int i = 1; i < 3; i++) {
+        lv_obj_add_flag(s_matter_tabs[i], LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 static void update_matter_app(void)
@@ -1563,7 +1572,6 @@ static void build_zigbee_app(lv_obj_t *cont)
         lv_obj_set_pos(s_zb_tabs[i], 6, 34);
         lv_obj_set_size(s_zb_tabs[i], BSP_LCD_H_RES - 12, BODY_H - 38);
         lv_obj_set_scrollable(s_zb_tabs[i], false);
-        if (i != 0) lv_obj_add_flag(s_zb_tabs[i], LV_OBJ_FLAG_HIDDEN);
     }
 
     /* Tab 0: Frames List */
@@ -1581,6 +1589,10 @@ static void build_zigbee_app(lv_obj_t *cont)
     s_zb_diag_info = mk_label(diag_card, &lv_font_montserrat_14, COL_TEXT, "");
     lv_obj_set_width(s_zb_diag_info, BSP_LCD_H_RES - 36);
     lv_label_set_long_mode(s_zb_diag_info, LV_LABEL_LONG_WRAP);
+
+    for (int i = 1; i < 3; i++) {
+        lv_obj_add_flag(s_zb_tabs[i], LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 static void update_zigbee_app(void)
@@ -1748,9 +1760,6 @@ esp_err_t ui_init(void)
         lv_obj_set_style_bg_opa(s_view_cont[i], LV_OPA_COVER, 0);
         lv_obj_set_scrollable(s_view_cont[i], false);
         lv_obj_set_scrollbar_mode(s_view_cont[i], LV_SCROLLBAR_MODE_OFF);
-        if (i != (int)UI_VIEW_LAUNCHER) {
-            lv_obj_add_flag(s_view_cont[i], LV_OBJ_FLAG_HIDDEN);
-        }
     }
 
     /* 3. Build View Content */
@@ -1761,6 +1770,13 @@ esp_err_t ui_init(void)
     build_wifi_app(s_view_cont[UI_VIEW_WIFI]);
     build_matter_app(s_view_cont[UI_VIEW_MATTER]);
     build_zigbee_app(s_view_cont[UI_VIEW_ZIGBEE]);
+
+    /* Hide inactive views now that all widgets are fully constructed */
+    for (int i = 0; i < UI_VIEW_COUNT; i++) {
+        if (i != (int)UI_VIEW_LAUNCHER) {
+            lv_obj_add_flag(s_view_cont[i], LV_OBJ_FLAG_HIDDEN);
+        }
+    }
 
     /* Boot into Launcher */
     s_active_view = UI_VIEW_LAUNCHER;
