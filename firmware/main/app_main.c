@@ -26,6 +26,7 @@
 #include "sdlog.h"
 #include "store.h"
 #include "ui.h"
+#include "chimera_ble.h"
 
 static const char *TAG = "wardrive";
 
@@ -188,11 +189,11 @@ void app_main(void)
     if (sdlog_init() == ESP_OK) {
         sdlog_status_t sd;
         sdlog_status(&sd);
-        ESP_LOGI(TAG, "logging to %s (%llu MB card, %llu MB free)",
-                 sd.path, (unsigned long long)sd.card_size_mb,
+        ESP_LOGI(TAG, "SD card ready: %llu MB card, %llu MB free (session logger initialized)",
+                 (unsigned long long)sd.card_size_mb,
                  (unsigned long long)sd.free_mb);
     } else {
-        ESP_LOGW(TAG, "no SD card -- detections will not be logged");
+        ESP_LOGW(TAG, "no SD card mounted -- live survey sessions available");
     }
 
     splash_say("bringing up C6 radio...");
@@ -223,12 +224,12 @@ void app_main(void)
         ESP_ERROR_CHECK(scan_wifi_start());
         ESP_ERROR_CHECK(scan_ble_start());
         ESP_ERROR_CHECK(scan_matter_start());
+
+        /* ChimeraBLE toolkit: depends on NimBLE being up. */
+        ESP_ERROR_CHECK_WITHOUT_ABORT(chimera_init());
     }
 
     ESP_ERROR_CHECK(ui_init());
-
-    /* Hands-free by default: rotate screens, but a swipe takes over. */
-    ui_set_autocycle(12);
 
     net_link_status_t ln;
     net_link_status(&ln);

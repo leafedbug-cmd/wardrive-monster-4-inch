@@ -12,6 +12,7 @@ idf_component_register(
         "scan_ble.c"
         "scan_matter.c"
         "scan_zigbee.c"
+        "chimera_ble.c"
         "ui.c"
     INCLUDE_DIRS "." "../../shared"
     REQUIRES

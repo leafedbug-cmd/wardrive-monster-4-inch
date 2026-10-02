@@ -288,25 +288,35 @@ static void write_row(const detection_t *d)
     }
 }
 
+static SemaphoreHandle_t s_log_lock;
+
 static void logger_task(void *arg)
 {
     detection_t det;
     TickType_t last_flush = xTaskGetTickCount();
 
     for (;;) {
-        if (xQueueReceive(s_queue, &det, pdMS_TO_TICKS(1000)) == pdTRUE) {
-            if (s_fp) {
-                write_row(&det);
+        if (xQueueReceive(s_queue, &det, pdMS_TO_TICKS(500)) == pdTRUE) {
+            if (s_log_lock) {
+                xSemaphoreTake(s_log_lock, portMAX_DELAY);
+                if (s_fp && s_st.session_active && !s_st.live_only) {
+                    write_row(&det);
+                }
+                xSemaphoreGive(s_log_lock);
             }
         }
 
         bool due = (xTaskGetTickCount() - last_flush) >= pdMS_TO_TICKS(FLUSH_EVERY_MS);
-        if (s_fp && (s_since_flush >= FLUSH_EVERY_N || (due && s_since_flush))) {
-            fflush(s_fp);
-            fsync(fileno(s_fp));
-            s_since_flush = 0;
-            last_flush = xTaskGetTickCount();
-            refresh_free_space();
+        if (s_log_lock) {
+            xSemaphoreTake(s_log_lock, portMAX_DELAY);
+            if (s_fp && (s_since_flush >= FLUSH_EVERY_N || (due && s_since_flush))) {
+                fflush(s_fp);
+                fsync(fileno(s_fp));
+                s_since_flush = 0;
+                last_flush = xTaskGetTickCount();
+                refresh_free_space();
+            }
+            xSemaphoreGive(s_log_lock);
         }
     }
 }
@@ -316,34 +326,136 @@ static void logger_task(void *arg)
 esp_err_t sdlog_init(void)
 {
     memset(&s_st, 0, sizeof(s_st));
+    if (!s_log_lock) {
+        s_log_lock = xSemaphoreCreateMutex();
+    }
 
     s_queue = xQueueCreate(QUEUE_DEPTH, sizeof(detection_t));
     if (!s_queue) {
         return ESP_ERR_NO_MEM;
     }
 
+    /* Start logger drain task; writes go to PSRAM-backed FATFS buffers. */
+    xTaskCreate(logger_task, "sdlog", 4096, NULL, 4, NULL);
+
     esp_err_t err = mount_card();
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "no card -- detections will not be logged");
-        return err;
-    }
-
-    err = open_session();
-    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "no card mounted (%s) -- ready for live-only sessions",
+                 esp_err_to_name(err));
+        s_st.mounted = false;
+        snprintf(s_st.error, sizeof(s_st.error), "No SD card");
         return err;
     }
 
     refresh_free_space();
     s_st.mounted = true;
-
-    /* Writes go to PSRAM-backed FATFS buffers; 4 KB of stack is plenty. */
-    xTaskCreate(logger_task, "sdlog", 4096, NULL, 4, NULL);
+    s_st.error[0] = '\0';
+    ESP_LOGI(TAG, "card mounted: %llu MB free of %llu MB",
+             (unsigned long long)s_st.free_mb,
+             (unsigned long long)s_st.card_size_mb);
     return ESP_OK;
+}
+
+esp_err_t sdlog_session_start(bool live_only)
+{
+    if (!s_log_lock) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    xSemaphoreTake(s_log_lock, portMAX_DELAY);
+
+    if (s_st.session_active) {
+        xSemaphoreGive(s_log_lock);
+        return ESP_OK;
+    }
+
+    /* Reset queue so no stale pre-session records can enter the new session */
+    if (s_queue) {
+        xQueueReset(s_queue);
+    }
+
+    s_st.session_start_us = esp_timer_get_time();
+    s_st.written = 0;
+    s_st.dropped = 0;
+    s_st.bytes = 0;
+    s_st.error[0] = '\0';
+
+    if (live_only || !s_st.mounted) {
+        s_st.live_only = true;
+        s_st.session_active = true;
+        snprintf(s_st.path, sizeof(s_st.path), "[LIVE ONLY - NO SD]");
+        ESP_LOGI(TAG, "session started: live-only mode");
+        xSemaphoreGive(s_log_lock);
+        return ESP_OK;
+    }
+
+    esp_err_t err = open_session();
+    if (err != ESP_OK) {
+        s_st.session_active = false;
+        s_st.live_only = false;
+        snprintf(s_st.error, sizeof(s_st.error), "Failed to open session file");
+        xSemaphoreGive(s_log_lock);
+        return err;
+    }
+
+    s_st.session_active = true;
+    s_st.live_only = false;
+    refresh_free_space();
+    ESP_LOGI(TAG, "session started: logging to %s", s_st.path);
+    xSemaphoreGive(s_log_lock);
+    return ESP_OK;
+}
+
+void sdlog_session_stop(void)
+{
+    if (!s_log_lock) {
+        return;
+    }
+    xSemaphoreTake(s_log_lock, portMAX_DELAY);
+
+    if (!s_st.session_active) {
+        xSemaphoreGive(s_log_lock);
+        return;
+    }
+
+    /* Drain remaining queued records for the terminating session */
+    if (s_queue && s_fp && !s_st.live_only) {
+        detection_t det;
+        while (xQueueReceive(s_queue, &det, 0) == pdTRUE) {
+            write_row(&det);
+        }
+    }
+
+    if (s_fp) {
+        fflush(s_fp);
+        fsync(fileno(s_fp));
+        fclose(s_fp);
+        s_fp = NULL;
+        s_since_flush = 0;
+        ESP_LOGI(TAG, "session stopped: closed %s (%lu rows)",
+                 s_st.path, (unsigned long)s_st.written);
+    } else {
+        ESP_LOGI(TAG, "session stopped (live-only)");
+    }
+
+    /* Clear queue completely */
+    if (s_queue) {
+        xQueueReset(s_queue);
+    }
+
+    s_st.session_active = false;
+    s_st.live_only = false;
+    xSemaphoreGive(s_log_lock);
+}
+
+bool sdlog_session_is_active(void)
+{
+    return s_st.session_active;
 }
 
 void sdlog_submit(const detection_t *det)
 {
-    if (!s_queue || !det) {
+    /* Drop immediately at the producer boundary if no session is active or live-only */
+    if (!s_st.session_active || s_st.live_only || !s_queue || !det) {
         return;
     }
     if (xQueueSend(s_queue, det, 0) != pdTRUE) {
@@ -353,21 +465,31 @@ void sdlog_submit(const detection_t *det)
 
 void sdlog_flush(void)
 {
-    if (s_fp) {
-        fflush(s_fp);
-        fsync(fileno(s_fp));
-        s_since_flush = 0;
+    if (s_log_lock) {
+        xSemaphoreTake(s_log_lock, portMAX_DELAY);
+        if (s_fp) {
+            fflush(s_fp);
+            fsync(fileno(s_fp));
+            s_since_flush = 0;
+        }
+        xSemaphoreGive(s_log_lock);
     }
 }
 
 void sdlog_status(sdlog_status_t *out)
 {
     if (out) {
-        *out = s_st;
+        if (s_log_lock) {
+            xSemaphoreTake(s_log_lock, portMAX_DELAY);
+            *out = s_st;
+            xSemaphoreGive(s_log_lock);
+        } else {
+            *out = s_st;
+        }
     }
 }
 
 bool sdlog_ready(void)
 {
-    return s_st.mounted && s_fp != NULL;
+    return s_st.mounted;
 }

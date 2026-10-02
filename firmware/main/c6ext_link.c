@@ -12,6 +12,7 @@
 #include "freertos/task.h"
 #include "sdlog.h"
 #include "store.h"
+#include "chimera_ble.h"
 
 static const char *TAG = "c6ext";
 
@@ -84,6 +85,7 @@ static void on_ble(const c6ext_ble_t *b)
     if (store_upsert(&d)) {
         sdlog_submit(&d);
     }
+    chimera_ingest_c6ext_ble(b);
 }
 
 static void on_zigbee(const c6ext_zigbee_t *z)

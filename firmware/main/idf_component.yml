@@ -21,7 +21,9 @@ dependencies:
   #   $env:IDF_COMPONENT_CACHE_PATH = 'C:\cc'
   #
   # See docs/C6-OTA.md#the-path-length-problem.
-  espressif/esp_hosted: "^3.0.9"
+  espressif/esp_hosted:
+    version: "3.0.9"
+    override_path: "C:/Users/atruett/esp/components/esp_hosted"
 
   espressif/esp_wifi_remote: "*"
 
