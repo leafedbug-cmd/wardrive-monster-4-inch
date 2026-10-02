@@ -153,3 +153,34 @@
  * to select the external antenna; it defaults to the onboard ceramic.
  * That is the XIAO's firmware to set, not the P4's -- listed here so
  * a dead-seeming link is not misdiagnosed as wiring. */
+
+/* ------------------------------------------------------------------ *
+ *  GPS -- ATGM336H (GPS + BeiDou) on a UART.                          *
+ *                                                                     *
+ *  The module is 2.7-3.6 V. Feed it 3V3. Putting 5 V on VCC kills it. *
+ *  Default line settings are 9600 8-N-1, NMEA 0183.                   *
+ *                                                                     *
+ *  Breakout pads: VCC  GND  TX  RX  PPS                               *
+ *                                                                     *
+ *  TX and RX cross, as always:                                        *
+ *      module TX -> P4 RX   (BSP_GPS_PIN_RX)                          *
+ *      module RX <- P4 TX   (BSP_GPS_PIN_TX)                          *
+ *                                                                     *
+ *  The P4 only ever transmits here to reconfigure the receiver, so the *
+ *  TX line is optional -- RX alone is enough to read position.        *
+ *                                                                     *
+ *  These default to the two spare header GPIOs docs/WIRING.md has      *
+ *  always reserved for a GPS. To put it on the board's I3C connector   *
+ *  instead, change these two numbers to that connector's GPIOs and     *
+ *  nothing else: the connector carries 3V3 and GND as well, so the     *
+ *  whole module lands on one plug. Waveshare does not publish that      *
+ *  pinout, so it has to be read off the board.                         *
+ * ------------------------------------------------------------------ */
+
+#define BSP_GPS_UART_PORT       UART_NUM_2
+#define BSP_GPS_PIN_RX          GPIO_NUM_23   /* hdr 7  <- module TX */
+#define BSP_GPS_PIN_TX          GPIO_NUM_24   /* hdr 27 -> module RX */
+#define BSP_GPS_BAUD_RATE       9600
+
+/* PPS is not wired by default. It buys sub-microsecond time alignment,
+ * which a wardrive log does not need -- the NMEA timestamp is plenty. */

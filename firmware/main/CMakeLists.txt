@@ -6,6 +6,7 @@ idf_component_register(
         "sdlog.c"
         "net_link.c"
         "c6ext_link.c"
+        "gps.c"
         "c6_ota.c"
         "scan_wifi.c"
         "scan_ble.c"

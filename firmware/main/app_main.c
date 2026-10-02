@@ -14,6 +14,7 @@
 
 #include "bsp_pins.h"
 #include "c6ext_link.h"
+#include "gps.h"
 #include "c6_ota.h"
 #include "display.h"
 #include "esp_log.h"
@@ -211,6 +212,10 @@ void app_main(void)
      * independently of the SDIO radio link -- it still scans when the
      * on-board C6 is dead, and it is the only source of 802.15.4. */
     ESP_ERROR_CHECK_WITHOUT_ABORT(c6ext_link_start());
+
+    /* Also independent of the radio link, and also fine to be absent:
+     * with no module fitted this simply never reports a fix. */
+    ESP_ERROR_CHECK_WITHOUT_ABORT(gps_start());
     scan_zigbee_start();
 
     if (link == ESP_OK) {

@@ -1,5 +1,7 @@
 #include "sdlog.h"
 
+#include "gps.h"
+
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -235,13 +237,26 @@ static void write_row(const detection_t *d)
         break;
     }
 
+    /* Position, if there is one. These columns stay EMPTY rather than
+     * 0 when there is no fix: a literal 0,0 is a real place in the Gulf
+     * of Guinea, and every mapping tool will cheerfully plot the whole
+     * drive there. */
+    char lat[16] = "", lon[16] = "";
+    if (gps_has_fix()) {
+        gps_fix_t f;
+        gps_get(&f);
+        snprintf(lat, sizeof(lat), "%.6f", f.lat);
+        snprintf(lon, sizeof(lon), "%.6f", f.lon);
+    }
+
     int n = fprintf(s_fp,
         "%lld,%s,%02X:%02X:%02X:%02X:%02X:%02X,%s,%d,%d,%u,%u,"
-        "%s,%s,%s,%s,%s,%s,%s,%s,%s,,\n",
+        "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n",
         (long long)(d->first_us / 1000), kind,
         d->mac[0], d->mac[1], d->mac[2], d->mac[3], d->mac[4], d->mac[5],
         name, d->rssi, d->rssi_best, d->channel, d->hits,
-        auth, addr_type, company, vid, pid, disc, via, panid, lqi);
+        auth, addr_type, company, vid, pid, disc, via, panid, lqi,
+        lat, lon);
 
     if (n > 0) {
         s_st.written++;
