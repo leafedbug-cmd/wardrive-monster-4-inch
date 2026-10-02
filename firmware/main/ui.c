@@ -1680,8 +1680,11 @@ static void refresh_cb(lv_timer_t *timer)
     static uint32_t s_refresh_count = 0;
     if (++s_refresh_count % 10 == 0) {
         UBaseType_t hwm = uxTaskGetStackHighWaterMark(NULL);
-        ESP_LOGI(TAG, "LVGL task stack high-water mark: %u words (%u bytes free out of 8192)",
-                 (unsigned)hwm, (unsigned)(hwm * sizeof(StackType_t)));
+        lv_mem_monitor_t mon;
+        lv_mem_monitor(&mon);
+        ESP_LOGI(TAG, "LVGL task stack high-water mark: %u bytes free out of 8192 | Heap free: %u/%u bytes (largest: %u, used: %u%%)",
+                 (unsigned)hwm, (unsigned)mon.free_size, (unsigned)mon.total_size,
+                 (unsigned)mon.free_biggest_size, (unsigned)mon.used_pct);
     }
 
     /* Refresh only active view */
@@ -1762,14 +1765,39 @@ esp_err_t ui_init(void)
         lv_obj_set_scrollbar_mode(s_view_cont[i], LV_SCROLLBAR_MODE_OFF);
     }
 
-    /* 3. Build View Content */
+    /* 3. Build View Content with heap monitoring */
+    lv_mem_monitor_t mon;
+    lv_mem_monitor(&mon);
+    ESP_LOGI(TAG, "LVGL Heap before widgets: %u free / %u total (largest: %u)",
+             (unsigned)mon.free_size, (unsigned)mon.total_size, (unsigned)mon.free_biggest_size);
+
     build_launcher(s_view_cont[UI_VIEW_LAUNCHER]);
+    lv_mem_monitor(&mon);
+    ESP_LOGI(TAG, "Heap after Launcher: %u free (used %u%%)", (unsigned)mon.free_size, (unsigned)mon.used_pct);
+
     build_dashboard_app(s_view_cont[UI_VIEW_DASHBOARD]);
+    lv_mem_monitor(&mon);
+    ESP_LOGI(TAG, "Heap after Dashboard: %u free (used %u%%)", (unsigned)mon.free_size, (unsigned)mon.used_pct);
+
     build_wardrive_app(s_view_cont[UI_VIEW_WARDRIVE]);
+    lv_mem_monitor(&mon);
+    ESP_LOGI(TAG, "Heap after Wardrive: %u free (used %u%%)", (unsigned)mon.free_size, (unsigned)mon.used_pct);
+
     build_ble_app(s_view_cont[UI_VIEW_BLE]);
+    lv_mem_monitor(&mon);
+    ESP_LOGI(TAG, "Heap after BLE: %u free (used %u%%)", (unsigned)mon.free_size, (unsigned)mon.used_pct);
+
     build_wifi_app(s_view_cont[UI_VIEW_WIFI]);
+    lv_mem_monitor(&mon);
+    ESP_LOGI(TAG, "Heap after Wi-Fi: %u free (used %u%%)", (unsigned)mon.free_size, (unsigned)mon.used_pct);
+
     build_matter_app(s_view_cont[UI_VIEW_MATTER]);
+    lv_mem_monitor(&mon);
+    ESP_LOGI(TAG, "Heap after Matter: %u free (used %u%%)", (unsigned)mon.free_size, (unsigned)mon.used_pct);
+
     build_zigbee_app(s_view_cont[UI_VIEW_ZIGBEE]);
+    lv_mem_monitor(&mon);
+    ESP_LOGI(TAG, "Heap after Zigbee: %u free (used %u%%)", (unsigned)mon.free_size, (unsigned)mon.used_pct);
 
     /* Hide inactive views now that all widgets are fully constructed */
     for (int i = 0; i < UI_VIEW_COUNT; i++) {
