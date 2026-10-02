@@ -10,20 +10,18 @@ dependencies:
 
   # Radio co-processor link + the Wi-Fi shim it implies.
   #
-  # esp_hosted 3.x is referenced BY PATH, not downloaded. A `path:` dependency
-  # is used in place, so the component manager never copies its deep internal
-  # tree into managed_components/ -- which is what breaks on Windows without
-  # long paths enabled (one of its files is ~150 chars on its own, and this
-  # repo already sits 112 chars deep). Extracted copy lives next to ESP-IDF.
-  #
   # 3.x is what gives us the chunked OTA API (begin/write/end/activate) and
   # therefore SD-card flashing of the C6. 2.x only has the URL flavour.
   # See docs/C6-OTA.md.
   #
-  # To fall back to the registry version, replace the two lines below with:
-  #   espressif/esp_hosted: "~2.0.11"
-  espressif/esp_hosted:
-    path: "C:/Users/atruett/esp/components/esp_hosted"
+  # WINDOWS: esp_hosted's internal tree is deep enough that unpacking it blows
+  # the 260-char MAX_PATH -- but it fails in the component manager's CACHE, not
+  # in this repo. Point the cache somewhere short and it resolves normally:
+  #
+  #   $env:IDF_COMPONENT_CACHE_PATH = 'C:\cc'
+  #
+  # See docs/C6-OTA.md#the-path-length-problem.
+  espressif/esp_hosted: "^3.0.9"
 
   espressif/esp_wifi_remote: "*"
 

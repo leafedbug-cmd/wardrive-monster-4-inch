@@ -55,7 +55,8 @@ one file per boot, with a session counter kept in NVS so files never collide.
 
 ## Build
 
-Needs ESP-IDF **v5.5.2 or newer** — built and verified against **v5.5.5**.
+Needs ESP-IDF **v5.5.2 or newer, but not 6.x** — built and verified against
+**v5.5.5**.
 
 > Not optional on this board. These kits ship with ESP32-P4 silicon at
 > **revision v3.1**, and IDF up to 5.5.1 caps the P4 at v1.99, so `idf.py flash`
@@ -70,6 +71,11 @@ Needs ESP-IDF **v5.5.2 or newer** — built and verified against **v5.5.5**.
 > `ESP32P4_REV_MAX_FULL` in an older IDF: newer versions carry real
 > rev-3-conditional code (`ESP32P4_SELECTS_REV_LESS_V3`), so bumping the number
 > alone can produce a subtly wrong binary.
+>
+> **The other end is IDF 6.x.** `esp_hosted` 3.0.9 is the newest release and it
+> does not compile against 6.1 -- `wifi_ap_record_t` lost the `akm_dpp` member,
+> so `eh_host_wifi.c:427` fails. There is no newer esp_hosted to move to, so
+> 5.5.x is the window until upstream catches up.
 
 ```powershell
 cd firmware
@@ -78,10 +84,16 @@ idf.py build
 idf.py -p COMx flash monitor
 ```
 
-`esp_hosted` 3.0.9 is referenced by `path:` from
-`C:/Users/atruett/esp/components/esp_hosted` rather than downloaded, because its
-internal tree is too deep to copy into this repo under Windows' 260-char limit.
-[Why, and how to re-create it elsewhere](docs/C6-OTA.md#the-path-length-problem).
+**On Windows, set a short component cache path first:**
+
+```powershell
+$env:IDF_COMPONENT_CACHE_PATH = 'C:\cc'
+```
+
+`esp_hosted` 3.0.9 has an internal tree deep enough to blow the 260-char
+`MAX_PATH` while the component manager unpacks it -- in its *cache*, not in this
+repo. A short cache root fixes it and the dependency then resolves from the
+registry like any other. [Detail](docs/C6-OTA.md#the-path-length-problem).
 
 ## Flashing the external C6 (XIAO)
 

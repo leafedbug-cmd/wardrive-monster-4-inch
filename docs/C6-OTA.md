@@ -14,8 +14,8 @@ flashing means soldering. That is why OTA matters here.
 | | |
 |---|---|
 | Component | `espressif/esp_hosted` **3.0.9**, referenced by `path:` |
-| Located at | `C:/Users/atruett/esp/components/esp_hosted` |
-| Why not the registry | 3.x **cannot be copied into `managed_components/`** on this machine — see [the path-length problem](#the-path-length-problem) |
+| Located at | `managed_components/`, from the registry |
+| Windows caveat | needs a short `IDF_COMPONENT_CACHE_PATH` — see [the path-length problem](#the-path-length-problem) |
 | OTA in use | chunked `begin/write/end/activate`, streaming straight off the SD card |
 
 **SD-card OTA is active.** Go to [Route A](#route-a--sd-card-ota-recommended).
@@ -58,40 +58,45 @@ shutil.Error: [WinError 3] The system cannot find the path specified
 A junction to a short path does **not** help — CMake resolves it back to the
 real directory.
 
-### The fix used here: reference the component in place
+### The fix used here: move the component cache
 
-A `path:` dependency is **used where it sits** — the component manager never
-copies it into `managed_components/`. So the deep tree only has to fit under a
-short root, which it does:
-
-```yaml
-# firmware/main/idf_component.yml
-espressif/esp_hosted:
-  path: "C:/Users/atruett/esp/components/esp_hosted"
-```
+The failure is in the component manager's **cache**, not in this repo. The
+default cache sits at
 
 ```
-C:\Users\atruett\esp\components\esp_hosted\   42 chars
-  + deepest internal file                    ~155 chars
-  = 197                                      well under 260
+C:\Users\<you>\AppData\Local\Espressif\ComponentManager\Cache\   ~62 chars
+  + service_<hash>\espressif__esp_hosted_3.0.9_<hash>\           ~50
+  + deepest internal file                                       ~155
+  = ~267                                                  over the limit
 ```
 
-Needs no administrator rights and no moving the repo. `esp_wifi_remote` resolves
-to the same local copy automatically, so there is only ever one esp_hosted in
-the build.
-
-To re-create it on another machine:
+So point the cache somewhere short before building:
 
 ```powershell
-# let the component manager fetch it once (the download and unpack to its
-# own cache succeed -- only the copy into the project fails)
-$env:IDF_COMPONENT_CACHE_PATH = 'C:\tmp\cc'
-# then lift it out to a short, permanent home:
-robocopy C:\tmp\cc\service_*\espressif__esp_hosted_3.0.9_* `
-         C:\Users\atruett\esp\components\esp_hosted /E
+$env:IDF_COMPONENT_CACHE_PATH = 'C:\cc'
+idf.py build
 ```
 
-and point `path:` at wherever you put it.
+```
+C:\cc\service_<hash>\espressif__esp_hosted_3.0.9_<hash>\   ~55 chars
+  + deepest internal file                                 ~155
+  = ~210                                                  fine
+```
+
+The copy from cache into `managed_components/` then succeeds too, because this
+repo's prefix is only 90 characters:
+
+```
+G:\Active\github\wardrive-monster-4-inch\firmware\managed_components\espressif__esp_hosted
+```
+
+Needs no administrator rights, no `path:` override and no absolute path baked
+into the manifest, so a fresh clone works with one environment variable. Keep
+the repo somewhere shallow: moved under `Documents\...` it would exceed the
+limit again at the copy step even with the cache fixed.
+
+A junction to a short path does **not** help: CMake resolves it back to the
+real directory.
 
 ### Alternative: enable long paths (needs admin)
 
