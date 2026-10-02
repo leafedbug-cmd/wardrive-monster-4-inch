@@ -310,7 +310,7 @@ static SemaphoreHandle_t s_log_lock;
 
 static void do_session_start(bool live_only)
 {
-    if (s_st.session_active) {
+    if (s_fp || (s_st.session_active && s_st.live_only && s_st.path[0])) {
         return;
     }
 
@@ -338,6 +338,7 @@ static void do_session_start(bool live_only)
         s_st.session_active = false;
         s_st.live_only = false;
         snprintf(s_st.error, sizeof(s_st.error), "Failed to open session file");
+        ESP_LOGE(TAG, "Failed to open session file: %s", esp_err_to_name(err));
         return;
     }
 
@@ -349,7 +350,7 @@ static void do_session_start(bool live_only)
 
 static void do_session_stop(void)
 {
-    if (!s_st.session_active) {
+    if (!s_fp && !s_st.session_active) {
         return;
     }
 
@@ -474,14 +475,6 @@ esp_err_t sdlog_session_start(bool live_only)
         return ESP_ERR_INVALID_STATE;
     }
 
-    if (s_log_lock) {
-        xSemaphoreTake(s_log_lock, portMAX_DELAY);
-        s_st.session_active = true;
-        s_st.live_only = live_only || !s_st.mounted;
-        s_st.session_start_us = esp_timer_get_time();
-        xSemaphoreGive(s_log_lock);
-    }
-
     log_cmd_t cmd = {
         .type = LOG_CMD_START,
         .live_only = live_only
@@ -495,12 +488,6 @@ void sdlog_session_stop(void)
         return;
     }
 
-    if (s_log_lock) {
-        xSemaphoreTake(s_log_lock, portMAX_DELAY);
-        s_st.session_active = false;
-        xSemaphoreGive(s_log_lock);
-    }
-
     log_cmd_t cmd = {
         .type = LOG_CMD_STOP,
         .live_only = false
@@ -511,6 +498,11 @@ void sdlog_session_stop(void)
 bool sdlog_session_is_active(void)
 {
     return s_st.session_active;
+}
+
+uint32_t sdlog_session_seq(void)
+{
+    return s_current_session_seq;
 }
 
 void sdlog_submit(const detection_t *det)

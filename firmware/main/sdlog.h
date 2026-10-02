@@ -42,6 +42,7 @@ esp_err_t sdlog_init(void);
 esp_err_t sdlog_session_start(bool live_only);
 void      sdlog_session_stop(void);
 bool      sdlog_session_is_active(void);
+uint32_t  sdlog_session_seq(void);
 
 /* Queue one detection. Non-blocking; dropped if no session active or queue full. */
 void sdlog_submit(const detection_t *det);

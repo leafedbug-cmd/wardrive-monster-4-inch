@@ -28,10 +28,21 @@ typedef enum {
     UI_VIEW_LAUNCHER = 0,    /* Galaxy Hacker 6-app home screen */
     UI_VIEW_DASHBOARD,       /* 6-screen swiping dashboard with scoped auto-cycle */
     UI_VIEW_WARDRIVE,        /* Survey / session interface with explicit start/stop */
-    UI_VIEW_BLE,             /* BLE toolkit: scanning, Chimera, foxhunt, GATT inspect */
-    UI_VIEW_WIFI,            /* Wi-Fi AP scan, channels histogram, signal monitor */
+    UI_VIEW_BLE_MENU,        /* BLE Toolkit Folder: Chimera, Scanner, Signal, GATT */
+    UI_VIEW_WIFI_MENU,       /* Wi-Fi Folder: AP Scanner, Channels, Monitor */
     UI_VIEW_MATTER,          /* Matter BLE commissioning & mDNS survey */
-    UI_VIEW_ZIGBEE,          /* 802.15.4 / Zigbee sniffer observations */
+    UI_VIEW_ZIGBEE_MENU,     /* Zigbee Folder: 802.15 Frames, Channels, Link Health */
+    /* Dedicated Tool Apps */
+    UI_VIEW_CHIMERA,         /* ChimeraBLE Security Research Toolkit */
+    UI_VIEW_BLE_SCAN,        /* BLE AP / Device Scanner */
+    UI_VIEW_BLE_FOXHUNT,     /* BLE Signal Finder / Foxhunt */
+    UI_VIEW_BLE_GATT,        /* BLE GATT Explorer */
+    UI_VIEW_WIFI_SCAN,       /* Wi-Fi AP Scanner */
+    UI_VIEW_WIFI_CHANS,      /* Wi-Fi Channels 1-14 Activity */
+    UI_VIEW_WIFI_MONITOR,    /* Wi-Fi Signal Monitor */
+    UI_VIEW_ZB_FRAMES,       /* 802.15.4 Frame Log */
+    UI_VIEW_ZB_CHANS,        /* Zigbee Channel Activity */
+    UI_VIEW_ZB_HEALTH,       /* 802.15.4 Link Health */
     UI_VIEW_COUNT
 } ui_view_t;
 

@@ -50,6 +50,7 @@ typedef struct {
     uint16_t hits;                 /* saturates, see STORE_HITS_MAX      */
     int64_t  first_us;
     int64_t  last_us;
+    uint32_t session_seq;          /* session id when this was logged    */
     char     name[DET_NAME_LEN];   /* SSID / BLE local name / instance   */
 
     union {

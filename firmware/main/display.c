@@ -137,6 +137,20 @@ static esp_err_t panel_init(void)
  *  Touch                                                              *
  * ------------------------------------------------------------------ */
 
+static void touch_coord_cb(esp_lcd_touch_handle_t tp, uint16_t *x, uint16_t *y,
+                           uint16_t *strength, uint8_t *point_num, uint8_t max_point_num)
+{
+    (void)tp; (void)strength; (void)max_point_num;
+    if (point_num && *point_num > 0 && x && y) {
+        /* Raw sensor coords: x in [0, 320], y in [0, 480].
+         * With mirror_y=true (y = 480 - y) and swap_xy=true:
+         * screen_x = 480 - raw_y, screen_y = raw_x. */
+        uint16_t sx = (y[0] <= 480) ? (480 - y[0]) : 0;
+        uint16_t sy = x[0];
+        ESP_LOGI("touch", "RAW (%u, %u) -> SCREEN (%u, %u)", x[0], y[0], sx, sy);
+    }
+}
+
 static esp_err_t touch_init(void)
 {
     /* The board already has an I2C bus here (ES8311 at 0x18, camera SCCB).
@@ -166,22 +180,22 @@ static esp_err_t touch_init(void)
                         TAG, "touch io");
 
     const esp_lcd_touch_config_t tp_cfg = {
-        .x_max         = BSP_LCD_H_RES,
-        .y_max         = BSP_LCD_V_RES,
+        .x_max         = BSP_LCD_H_RES_NATIVE,
+        .y_max         = BSP_LCD_V_RES_NATIVE,
         .rst_gpio_num  = BSP_TOUCH_PIN_RST,
         .int_gpio_num  = BSP_TOUCH_PIN_INT,
         .levels = {
             .reset     = 0,   /* CTP_RST is active low */
             .interrupt = 0,   /* CTP_INT pulls low on touch */
         },
-        /* These MUST match the lvgl_port rotation below, flag for flag.
-         * With swap_xy on, the touch Y axis drives the screen's HORIZONTAL
-         * axis -- so a single mismatched mirror_y does not look like a
-         * calibration error, it makes every sideways swipe go the wrong
-         * way while taps still land correctly. */
+        .process_coordinates = touch_coord_cb,
+        /* Empirical digitizer calibration:
+         * FT6336 raw sensor X is physical vertical [0, 320] (top to bottom).
+         * FT6336 raw sensor Y is inverted physical horizontal [0, 480] (right to left).
+         * Therefore, swap_xy and mirror_y are required; mirror_x is false. */
         .flags = {
             .swap_xy  = true,
-            .mirror_x = true,
+            .mirror_x = false,
             .mirror_y = true,
         },
     };

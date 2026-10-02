@@ -1,4 +1,5 @@
 #include "store.h"
+#include "sdlog.h"
 
 #include <string.h>
 
@@ -210,6 +211,15 @@ bool store_upsert(const detection_t *det)
     k->last_us = now;
     if (det->rssi != DET_RSSI_NA && det->rssi > k->best_rssi) {
         k->best_rssi = det->rssi;
+    }
+
+    /* Auto-submit to active SD recording session if not yet logged in this session */
+    if (sdlog_session_is_active()) {
+        uint32_t sseq = sdlog_session_seq();
+        if (slot->session_seq != sseq) {
+            slot->session_seq = sseq;
+            sdlog_submit(slot);
+        }
     }
 
     xSemaphoreGive(s_lock);
