@@ -29,6 +29,7 @@ static struct {
     volatile int64_t  last_hello_us;
     volatile uint32_t wifi, ble, zigbee;   /* accepted into the store   */
     volatile uint32_t bad_crc, resyncs;
+    volatile uint32_t raw_bytes;   /* anything at all on the wire */
     c6ext_hello_t     hello;
     bool              hello_valid;
     bool              ver_warned;
@@ -187,12 +188,38 @@ static void rx_task(void *arg)
 {
     (void)arg;
     uint8_t chunk[RX_CHUNK];
+    int64_t next_diag_us = 0;
 
     for (;;) {
         int n = uart_read_bytes(BSP_C6EXT_UART_PORT, chunk, sizeof(chunk),
                                 pdMS_TO_TICKS(200));
+        if (n > 0) {
+            s.raw_bytes += (uint32_t)n;
+        }
         for (int i = 0; i < n; i++) {
             feed(chunk[i]);
+        }
+
+        /* While the link is down, say WHY once every 5 s. The distinction
+         * that matters when bringing the wiring up is whether anything is
+         * arriving at all: no bytes means the wire or the XIAO is dead,
+         * whereas bytes with no valid frame means it is alive but
+         * misconfigured -- wrong baud, or TX and RX crossed the wrong way. */
+        int64_t now = esp_timer_get_time();
+        if (!c6ext_link_up() && now >= next_diag_us) {
+            next_diag_us = now + 5 * 1000 * 1000;
+            if (s.raw_bytes == 0) {
+                ESP_LOGW(TAG, "no heartbeat and NO BYTES on rx (gpio%d): "
+                              "check GND, power, and that XIAO D6 reaches it",
+                         (int)BSP_C6EXT_PIN_RX);
+            } else {
+                ESP_LOGW(TAG, "no heartbeat but %lu bytes seen "
+                              "(crc errors %lu, resyncs %lu): wire is live, "
+                              "so suspect baud or a protocol mismatch",
+                         (unsigned long)s.raw_bytes,
+                         (unsigned long)s.bad_crc,
+                         (unsigned long)s.resyncs);
+            }
         }
     }
 }

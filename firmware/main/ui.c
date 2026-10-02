@@ -36,7 +36,7 @@ static const char *TAG = "ui";
 #define FOOTER_H   22
 #define BODY_H     (BSP_LCD_V_RES - HEADER_H - FOOTER_H)
 
-#define LIST_ROWS  7
+#define LIST_ROWS  10
 #define REFRESH_MS 1000
 
 static const char *SCREEN_NAME[UI_SCREEN_COUNT] = {
@@ -68,7 +68,10 @@ static lv_obj_t *s_card_val[DET_KIND_COUNT], *s_card_sub[DET_KIND_COUNT];
 /* per-protocol screens */
 static lv_obj_t *s_big[UI_SCREEN_COUNT];
 static lv_obj_t *s_meta[UI_SCREEN_COUNT];
-static lv_obj_t *s_list[UI_SCREEN_COUNT];
+static lv_obj_t *s_list[UI_SCREEN_COUNT];      /* name column      */
+static lv_obj_t *s_lc_rssi[UI_SCREEN_COUNT];   /* dBm, right-aligned */
+static lv_obj_t *s_lc_ch[UI_SCREEN_COUNT];     /* channel            */
+static lv_obj_t *s_lc_age[UI_SCREEN_COUNT];    /* age                */
 static lv_obj_t *s_chart;
 static lv_chart_series_t *s_chart_ser;
 
@@ -106,6 +109,7 @@ static lv_obj_t *mk_card(lv_obj_t *parent, lv_coord_t x, lv_coord_t y,
     lv_obj_set_style_border_width(c, 1, 0);
     lv_obj_set_style_pad_all(c, 6, 0);
     lv_obj_set_scrollable(c, false);
+    lv_obj_set_scrollbar_mode(c, LV_SCROLLBAR_MODE_OFF);
     return c;
 }
 
@@ -165,11 +169,24 @@ static void build_chrome(lv_obj_t *scr)
     s_hdr_clock = mk_label(hdr, &lv_font_montserrat_14, COL_MUTED, "0m");
     lv_obj_align(s_hdr_clock, LV_ALIGN_CENTER, 0, 0);
 
+    /* Both status labels get a FIXED width and right-aligned text.
+     *
+     * The previous version aligned the link label relative to the SD label
+     * with lv_obj_align_to(). That resolves once, at build time, against
+     * whatever width the SD label happened to have then -- so the moment
+     * "SD --" grew into "SD 29512M" the two labels sat on top of each
+     * other. Fixed boxes cannot drift no matter what the text does. */
     s_hdr_sd = mk_label(hdr, &lv_font_montserrat_14, COL_MUTED, "SD --");
+    lv_obj_set_width(s_hdr_sd, 76);
+    lv_obj_set_style_text_align(s_hdr_sd, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_label_set_long_mode(s_hdr_sd, LV_LABEL_LONG_CLIP);
     lv_obj_align(s_hdr_sd, LV_ALIGN_RIGHT_MID, -8, 0);
 
     s_hdr_link = mk_label(hdr, &lv_font_montserrat_14, COL_MUTED, "C6 --");
-    lv_obj_align_to(s_hdr_link, s_hdr_sd, LV_ALIGN_OUT_LEFT_MID, -10, 0);
+    lv_obj_set_width(s_hdr_link, 74);
+    lv_obj_set_style_text_align(s_hdr_link, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_label_set_long_mode(s_hdr_link, LV_LABEL_LONG_CLIP);
+    lv_obj_align(s_hdr_link, LV_ALIGN_RIGHT_MID, -90, 0);
 
     /* Footer: one dot per screen, the active one filled. */
     lv_obj_t *ftr = lv_obj_create(scr);
@@ -280,26 +297,95 @@ static void update_combined(void)
  *  Screens 1-3 -- one protocol each                                   *
  * ------------------------------------------------------------------ */
 
+static const char *by_rssi_title(ui_screen_t which)
+{
+    /* Matter is ordered by recency because mDNS rows carry no RSSI. */
+    return (which == UI_SCREEN_MATTER) ? "NEWEST" : "STRONGEST";
+}
+
+/* Layout, for a 480x320 landscape body of BODY_H px.
+ *
+ * The left column is three stacked cards rather than one. The old single
+ * card put a 36 px number and four lines of meta inside 92 px of usable
+ * height and let them collide -- which is what the Wi-Fi screen was doing,
+ * printing the unique count straight through "+8/min".
+ *
+ *      x=6   w=152                    x=164  w=310
+ *      +-------------+                +---------------------------+
+ *      | UNIQUE  nnn |  y=4   h=86    |  list, 4 aligned columns  |
+ *      +-------------+                |                           |
+ *      | meta lines  |  y=94          |                           |
+ *      +-------------+                |                           |
+ *      | chart       |  y=172 h=96    |                           |
+ *      +-------------+                +---------------------------+
+ */
+#define COL_L_X      6
+#define COL_L_W      152
+#define COL_R_X      164
+#define COL_R_W      (BSP_LCD_H_RES - COL_R_X - 6)
+
+#define STAT_Y       4
+#define STAT_H       86
+#define META_Y       94
+#define META_H_CHART 74
+#define META_H_PLAIN (BODY_H - META_Y - 4)
+#define CHART_Y      172
+#define CHART_H      (BODY_H - CHART_Y - 4)
+
+/* Column offsets inside the list card, which has 6 px padding each side. */
+#define LCOL_NAME_W  168
+#define LCOL_RSSI_X  170
+#define LCOL_RSSI_W  46
+#define LCOL_CH_X    218
+#define LCOL_CH_W    32
+#define LCOL_AGE_X   252
+#define LCOL_AGE_W   46
+#define LCOL_ROW1_Y  22
+
+static lv_obj_t *mk_col(lv_obj_t *parent, lv_coord_t x, lv_coord_t y,
+                        lv_coord_t w, lv_text_align_t align, lv_color_t colour)
+{
+    lv_obj_t *l = mk_label(parent, &lv_font_montserrat_14, colour, "");
+    lv_obj_set_width(l, w);
+    lv_obj_set_style_text_align(l, align, 0);
+    lv_label_set_long_mode(l, LV_LABEL_LONG_CLIP);
+    lv_obj_align(l, LV_ALIGN_TOP_LEFT, x, y);
+    return l;
+}
+
 static void build_protocol(lv_obj_t *t, ui_screen_t which, bool with_chart)
 {
     const lv_color_t col = screen_color(which);
 
-    lv_obj_t *left = mk_card(t, 6, 4, 150, with_chart ? 104 : BODY_H - 8, col);
-    mk_label(left, &lv_font_montserrat_14, COL_MUTED, "UNIQUE");
+    /* --- stat card: the headline number, and nothing else --- */
+    lv_obj_t *stat = mk_card(t, COL_L_X, STAT_Y, COL_L_W, STAT_H, col);
+    lv_obj_t *cap = mk_label(stat, &lv_font_montserrat_14, COL_MUTED, "UNIQUE");
+    lv_obj_align(cap, LV_ALIGN_TOP_LEFT, 0, 0);
 
-    s_big[which] = mk_label(left, &lv_font_montserrat_36, COL_TEXT, "0");
-    lv_obj_align(s_big[which], LV_ALIGN_LEFT_MID, 0, with_chart ? 6 : -10);
+    s_big[which] = mk_label(stat, &lv_font_montserrat_36, COL_TEXT, "0");
+    lv_obj_align(s_big[which], LV_ALIGN_BOTTOM_LEFT, 0, 2);
 
-    s_meta[which] = mk_label(left, &lv_font_montserrat_14, COL_MUTED, "");
-    lv_obj_align(s_meta[which], LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    /* --- meta card --- *
+     * Wraps rather than clips: these strings genuinely do not fit on one
+     * line, which is why "mDNS 0 commissionable" was rendering as
+     * "mDNS 0 commissio". */
+    lv_obj_t *metac = mk_card(t, COL_L_X, META_Y, COL_L_W,
+                              with_chart ? META_H_CHART : META_H_PLAIN,
+                              COL_EDGE);
+    s_meta[which] = mk_label(metac, &lv_font_montserrat_14, COL_MUTED, "");
+    lv_obj_set_width(s_meta[which], COL_L_W - 14);
+    lv_label_set_long_mode(s_meta[which], LV_LABEL_LONG_WRAP);
+    lv_obj_align(s_meta[which], LV_ALIGN_TOP_LEFT, 0, 0);
 
+    /* --- chart card, Wi-Fi only --- */
     if (with_chart) {
-        lv_obj_t *cc = mk_card(t, 6, 112, 150, BODY_H - 120, col);
-        lv_obj_t *lab = mk_label(cc, &lv_font_montserrat_14, COL_MUTED, "CHANNELS 1-14");
+        lv_obj_t *cc = mk_card(t, COL_L_X, CHART_Y, COL_L_W, CHART_H, col);
+        lv_obj_t *lab = mk_label(cc, &lv_font_montserrat_14, COL_MUTED,
+                                 "CHANNELS 1-14");
         lv_obj_align(lab, LV_ALIGN_TOP_LEFT, 0, 0);
 
         s_chart = lv_chart_create(cc);
-        lv_obj_set_size(s_chart, 134, BODY_H - 160);
+        lv_obj_set_size(s_chart, COL_L_W - 14, CHART_H - 36);
         lv_obj_align(s_chart, LV_ALIGN_BOTTOM_MID, 0, 0);
         lv_chart_set_type(s_chart, LV_CHART_TYPE_BAR);
         lv_chart_set_point_count(s_chart, 14);
@@ -307,17 +393,34 @@ static void build_protocol(lv_obj_t *t, ui_screen_t which, bool with_chart)
         lv_obj_set_style_bg_opa(s_chart, LV_OPA_TRANSP, 0);
         lv_obj_set_style_border_width(s_chart, 0, 0);
         lv_obj_set_style_pad_all(s_chart, 0, 0);
+        /* Without a column gap the 14 bars touch and read as one block. */
+        lv_obj_set_style_pad_column(s_chart, 2, LV_PART_MAIN);
         lv_obj_set_style_size(s_chart, 0, 0, LV_PART_INDICATOR);
         lv_chart_set_div_line_count(s_chart, 0, 0);
+        lv_obj_set_scrollbar_mode(s_chart, LV_SCROLLBAR_MODE_OFF);
         s_chart_ser = lv_chart_add_series(s_chart, col, LV_CHART_AXIS_PRIMARY_Y);
     }
 
-    /* Right-hand list: one monospaced-ish block, rebuilt each refresh.
-     * Cheaper than N label objects and easier to keep aligned. */
-    lv_obj_t *lc = mk_card(t, 162, 4, BSP_LCD_H_RES - 168, BODY_H - 8, COL_EDGE);
-    s_list[which] = mk_label(lc, &lv_font_montserrat_14, COL_TEXT, "");
-    lv_obj_align(s_list[which], LV_ALIGN_TOP_LEFT, 0, 0);
-    lv_label_set_long_mode(s_list[which], LV_LABEL_LONG_CLIP);
+    /* --- list card: four independently aligned columns --- *
+     * Not one space-padded block. Montserrat is proportional, so padding
+     * with spaces lines nothing up: a row of "1"s is far narrower than a
+     * row of "W"s, and the dBm/CH/AGE columns wander across the card.
+     * Four fixed-width labels cannot wander. */
+    lv_obj_t *lc = mk_card(t, COL_R_X, 4, COL_R_W, BODY_H - 8, COL_EDGE);
+
+    lv_obj_t *h_name = mk_col(lc, 0, 0, LCOL_NAME_W, LV_TEXT_ALIGN_LEFT, COL_MUTED);
+    lv_obj_t *h_rssi = mk_col(lc, LCOL_RSSI_X, 0, LCOL_RSSI_W, LV_TEXT_ALIGN_RIGHT, COL_MUTED);
+    lv_obj_t *h_ch   = mk_col(lc, LCOL_CH_X,   0, LCOL_CH_W,   LV_TEXT_ALIGN_RIGHT, COL_MUTED);
+    lv_obj_t *h_age  = mk_col(lc, LCOL_AGE_X,  0, LCOL_AGE_W,  LV_TEXT_ALIGN_RIGHT, COL_MUTED);
+    lv_label_set_text(h_name, by_rssi_title(which));
+    lv_label_set_text(h_rssi, "dBm");
+    lv_label_set_text(h_ch,   "CH");
+    lv_label_set_text(h_age,  "AGE");
+
+    s_list[which]    = mk_col(lc, 0,           LCOL_ROW1_Y, LCOL_NAME_W, LV_TEXT_ALIGN_LEFT,  COL_TEXT);
+    s_lc_rssi[which] = mk_col(lc, LCOL_RSSI_X, LCOL_ROW1_Y, LCOL_RSSI_W, LV_TEXT_ALIGN_RIGHT, COL_TEXT);
+    s_lc_ch[which]   = mk_col(lc, LCOL_CH_X,   LCOL_ROW1_Y, LCOL_CH_W,   LV_TEXT_ALIGN_RIGHT, COL_TEXT);
+    s_lc_age[which]  = mk_col(lc, LCOL_AGE_X,  LCOL_ROW1_Y, LCOL_AGE_W,  LV_TEXT_ALIGN_RIGHT, COL_TEXT);
 }
 
 static void update_protocol(ui_screen_t which, det_kind_t kind, bool by_rssi)
@@ -334,51 +437,69 @@ static void update_protocol(ui_screen_t which, det_kind_t kind, bool by_rssi)
     default:         scan_zigbee_status(&sc); break;
     }
 
-    char meta[128];
+    char meta[160];
     char best[8];
     fmt_rssi(best, sizeof(best), st.best_rssi == -128 ? DET_RSSI_NA : st.best_rssi);
-    snprintf(meta, sizeof(meta), "+%lu/min\n%lu hits\nbest %s dBm\n%s",
+    snprintf(meta, sizeof(meta), "+%lu/min  %lu hits\nbest %s dBm\n%s",
              (unsigned long)st.new_last_min, (unsigned long)st.hits,
              best, sc.detail);
     lv_label_set_text(s_meta[which], meta);
+    lv_obj_set_style_text_color(s_meta[which],
+                                sc.state == SCAN_UNAVAILABLE ? COL_BAD : COL_MUTED, 0);
 
-    /* Device list */
+    /* One buffer per column, newline separated, so every row shares a
+     * baseline across all four labels. */
     static detection_t rows[LIST_ROWS];
     size_t n = store_snapshot(kind, rows, LIST_ROWS, by_rssi);
 
-    char out[LIST_ROWS * 56 + 64];
-    size_t o = 0;
-    o += snprintf(out + o, sizeof(out) - o, "%-18s %4s %3s %4s\n",
-                  by_rssi ? "STRONGEST" : "NEWEST", "dBm", "CH", "AGE");
+    char cname[LIST_ROWS * 24 + 16];
+    char crssi[LIST_ROWS * 8 + 16];
+    char cch[LIST_ROWS * 6 + 16];
+    char cage[LIST_ROWS * 8 + 16];
+    size_t on = 0, orssi = 0, och = 0, oage = 0;
 
-    for (size_t i = 0; i < n && o < sizeof(out) - 1; i++) {
-        char label[19];
+    cname[0] = crssi[0] = cch[0] = cage[0] = '\0';
+
+    for (size_t i = 0; i < n; i++) {
+        char label[22];
         if (rows[i].name[0]) {
-            snprintf(label, sizeof(label), "%.18s", rows[i].name);
+            snprintf(label, sizeof(label), "%.21s", rows[i].name);
         } else {
             snprintf(label, sizeof(label), "%02X:%02X:%02X:%02X:%02X:%02X",
                      rows[i].mac[0], rows[i].mac[1], rows[i].mac[2],
                      rows[i].mac[3], rows[i].mac[4], rows[i].mac[5]);
         }
 
-        char rssi[8], age[8];
-        fmt_rssi(rssi, sizeof(rssi), by_rssi ? rows[i].rssi_best : rows[i].rssi);
+        char age[8];
         fmt_age(age, sizeof(age), rows[i].last_us);
+        int8_t r = by_rssi ? rows[i].rssi_best : rows[i].rssi;
 
-        char ch[4];
-        if (rows[i].channel) {
-            snprintf(ch, sizeof(ch), "%3u", rows[i].channel);
+        on += snprintf(cname + on, sizeof(cname) - on, "%s\n", label);
+
+        if (r == DET_RSSI_NA) {
+            orssi += snprintf(crssi + orssi, sizeof(crssi) - orssi, "--\n");
         } else {
-            snprintf(ch, sizeof(ch), "  -");
+            orssi += snprintf(crssi + orssi, sizeof(crssi) - orssi, "%d\n", (int)r);
         }
 
-        o += snprintf(out + o, sizeof(out) - o, "%-18s %4s %3s %4s\n",
-                      label, rssi, ch, age);
+        if (rows[i].channel) {
+            och += snprintf(cch + och, sizeof(cch) - och, "%u\n",
+                            (unsigned)rows[i].channel);
+        } else {
+            och += snprintf(cch + och, sizeof(cch) - och, "-\n");
+        }
+
+        oage += snprintf(cage + oage, sizeof(cage) - oage, "%s\n", age);
     }
+
     if (n == 0) {
-        snprintf(out + o, sizeof(out) - o, "\n  nothing yet");
+        snprintf(cname, sizeof(cname), "nothing yet");
     }
-    lv_label_set_text(s_list[which], out);
+
+    lv_label_set_text(s_list[which],    cname);
+    lv_label_set_text(s_lc_rssi[which], crssi);
+    lv_label_set_text(s_lc_ch[which],   cch);
+    lv_label_set_text(s_lc_age[which],  cage);
 }
 
 static void update_wifi(void)

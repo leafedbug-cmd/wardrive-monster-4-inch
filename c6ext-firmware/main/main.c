@@ -57,12 +57,18 @@ static const char *TAG = "c6ext";
 #define LINK_PIN_RX     GPIO_NUM_17     /* D7 */
 #define LINK_BAUD       460800
 
-/* The XIAO does not switch to its u.FL connector on its own. GPIO14 low
- * powers the RF switch; GPIO3 high selects the external path. It boots
- * with the onboard ceramic antenna, so without this the external antenna
- * you soldered on does nothing at all. */
-#define ANT_PIN_ENABLE  GPIO_NUM_14
-#define ANT_PIN_SELECT  GPIO_NUM_3
+/* The XIAO does not switch to its u.FL connector on its own, and the two
+ * pins are easy to get the wrong way round. Per Seeed's wiki:
+ *
+ *      GPIO3  LOW   activates RF switch control   (required first)
+ *      GPIO14 HIGH  selects the external u.FL antenna
+ *             LOW   selects the onboard ceramic antenna (power-on default)
+ *
+ * Getting this inverted is silent: the radio works fine on the ceramic
+ * antenna and nothing reports an error, you just never get the range you
+ * soldered the connector on for. */
+#define ANT_PIN_ENABLE  GPIO_NUM_3
+#define ANT_PIN_SELECT  GPIO_NUM_14
 
 /* Phase lengths. Wi-Fi gets the longest slice because a passive sweep of
  * 14 channels cannot usefully be cut short, and because the external
@@ -93,6 +99,7 @@ static struct {
     volatile uint8_t  roles;
     volatile uint8_t  channel;
     volatile uint32_t seen_wifi, seen_ble, seen_zigbee, dropped;
+    volatile uint32_t tx_frames, tx_bytes;
     bool              ext_antenna;
 } s;
 
@@ -115,11 +122,17 @@ static void link_send(uint8_t type, const void *payload, uint8_t len)
         }
     }
 
-    uart_write_bytes(LINK_UART, hdr, sizeof(hdr));
+    int n = 0;
+    n += uart_write_bytes(LINK_UART, hdr, sizeof(hdr));
     if (len) {
-        uart_write_bytes(LINK_UART, payload, len);
+        n += uart_write_bytes(LINK_UART, payload, len);
     }
-    uart_write_bytes(LINK_UART, &crc, 1);
+    n += uart_write_bytes(LINK_UART, &crc, 1);
+
+    s.tx_frames++;
+    if (n > 0) {
+        s.tx_bytes += (uint32_t)n;
+    }
 }
 
 /* Called from radio callbacks, so it must never block. A full queue drops
@@ -431,6 +444,7 @@ static void rx_task(void *arg)
 static void hello_task(void *arg)
 {
     (void)arg;
+    uint32_t ticks = 0;
     for (;;) {
         c6ext_hello_t h = {
             .proto_ver   = C6EXT_PROTO_VERSION,
@@ -443,6 +457,18 @@ static void hello_task(void *arg)
             .ext_antenna = s.ext_antenna ? 1 : 0,
         };
         emit(C6EXT_MSG_HELLO, &h, sizeof(h));
+
+        /* Say out loud what we have pushed at the wire. If the P4 reports
+         * no bytes while this keeps climbing, the firmware is fine and the
+         * fault is the cable, the ground, or the pin it lands on. */
+        if (++ticks % 5 == 0) {
+            ESP_LOGI(TAG, "tx %lu frames / %lu bytes on gpio%d; "
+                          "wifi %lu zigbee %lu dropped %lu",
+                     (unsigned long)s.tx_frames, (unsigned long)s.tx_bytes,
+                     (int)LINK_PIN_TX,
+                     (unsigned long)s.seen_wifi, (unsigned long)s.seen_zigbee,
+                     (unsigned long)s.dropped);
+        }
         vTaskDelay(pdMS_TO_TICKS(HELLO_PERIOD_MS));
     }
 }
@@ -462,12 +488,12 @@ static void antenna_select_external(void)
     };
     ESP_ERROR_CHECK(gpio_config(&io));
 
-    gpio_set_level(ANT_PIN_ENABLE, 0);   /* power the RF switch       */
-    gpio_set_level(ANT_PIN_SELECT, 1);   /* select the u.FL connector */
+    gpio_set_level(ANT_PIN_ENABLE, 0);   /* GPIO3  low  = switch enabled */
+    gpio_set_level(ANT_PIN_SELECT, 1);   /* GPIO14 high = external u.FL  */
     s.ext_antenna = true;
 
     ESP_LOGI(TAG, "RF switch set to the external antenna "
-                  "(GPIO%d low, GPIO%d high)",
+                  "(GPIO%d low enables, GPIO%d high selects u.FL)",
              (int)ANT_PIN_ENABLE, (int)ANT_PIN_SELECT);
 }
 
